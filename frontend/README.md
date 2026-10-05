@@ -1,16 +1,32 @@
-# React + Vite
+# InSight frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The React and Vite frontend provides the M4 authentication and student
+dashboard routes:
 
-Currently, two official plugins are available:
+- `/login` — sign in using the backend authentication API.
+- `/register` — create a student account.
+- `/dashboard` — protected user-scoped session summary and recent sessions.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Local development
 
-## React Compiler
+Set `VITE_API_BASE_URL` in `.env` to the backend origin, for example
+`http://127.0.0.1:8000`. Do not commit `.env`.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+From the frontend directory, run:
 
-## Expanding the ESLint configuration
+```powershell
+npm install
+npm run dev
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Start the backend separately from `backend` with
+`.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload`.
+
+Authentication state is stored in browser local storage so a page refresh can
+restore the session. The frontend verifies the stored token with `/api/auth/me`
+when it starts; logout clears the saved user and token. Dashboard data comes
+from the authenticated summary and recent-session endpoints. Empty sessions
+and unavailable evaluation scores are shown as empty/`N/A`, not fabricated.
+
+Run `npm run build` to create the production bundle and `npm run lint` to run
+ESLint.

@@ -102,6 +102,30 @@ role; role-based authorization is available through the reusable
 `require_admin` dependency. No admin-only application endpoint is introduced
 in M3.
 
+## Student dashboard
+
+The authenticated dashboard API provides:
+
+- `GET /api/dashboard/summary` — returns session counts and the average
+  available evaluation score for the authenticated user. `average_score` is
+  `null` until evaluation data exists.
+- `GET /api/dashboard/recent` — returns up to five of that user's latest
+  interview sessions, newest first. It returns an empty list when no sessions
+  exist.
+
+Both endpoints require `Authorization: Bearer <access_token>`. Their queries
+are scoped to the authenticated user's ID. No sessions or evaluations are
+created as placeholder data.
+
+The frontend provides `/login`, `/register`, and a protected `/dashboard`.
+From the repository root, run the backend with
+`cd backend; .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload` and
+the frontend with `cd frontend; npm run dev`. Configure
+`VITE_API_BASE_URL` in the frontend environment file to point to the backend.
+The dashboard displays available session totals, evaluated average when
+present, and a clear empty state otherwise. Logout clears the local client
+session; it does not call a backend logout endpoint.
+
 ## Current milestones
 
 ### M2 - Database Layer
@@ -114,7 +138,13 @@ command.
 
 M3 provides registration, login, current-user retrieval, bcrypt password
 hashing, JWT access tokens, and reusable role-based authorization
-dependencies. Dashboard, interview functionality, evaluation processing,
+dependencies.
+
+### M4 - Student Dashboard
+
+M4 provides the authenticated dashboard summary and recent-session endpoints,
+plus frontend login, registration, session persistence, protected routing, and
+the student dashboard. Interview functionality, evaluation processing,
 reports, and deployment are not included in this milestone.
 
 ### M1 - Project Foundation

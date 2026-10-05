@@ -12,6 +12,7 @@ from app.database import models
 from app.database.base import Base
 from app.database.models import User
 from app.routers.auth import router as auth_router
+from app.routers.dashboard import router as dashboard_router
 
 
 @pytest.fixture
@@ -30,6 +31,7 @@ def auth_test_context() -> Generator[tuple[TestClient, sessionmaker[Session]], N
 
     test_app = FastAPI()
     test_app.include_router(auth_router)
+    test_app.include_router(dashboard_router)
 
     def override_get_db() -> Generator[Session, None, None]:
         db = test_session_local()
@@ -52,4 +54,3 @@ def auth_test_context() -> Generator[tuple[TestClient, sessionmaker[Session]], N
         test_app.dependency_overrides.clear()
         Base.metadata.drop_all(bind=engine)
         engine.dispose()
-
