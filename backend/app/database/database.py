@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
@@ -20,3 +20,13 @@ def init_db() -> None:
 
     _ = models
     Base.metadata.create_all(bind=engine)
+
+    user_columns = {column["name"] for column in inspect(engine).get_columns("users")}
+    if "role" not in user_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE users "
+                    "ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'STUDENT'"
+                )
+            )

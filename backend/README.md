@@ -3,8 +3,8 @@
 ## Project overview
 
 InSight is a web platform for practicing job interviews with AI-assisted
-feedback. The project is being developed in milestones. The current scope is
-the backend foundation and a frontend-to-backend health check only.
+feedback. The current implemented scope includes the backend foundation,
+MySQL data models, and authentication.
 
 ## Technology stack
 
@@ -74,6 +74,33 @@ drop or reset existing tables. The seed command inserts the development
 question bank only when a question with the same text is not already present;
 re-running it is safe. The seed command also initializes missing tables.
 `get_db` is available as a FastAPI dependency and closes each session after use.
+After upgrading an existing M2 database to M3, run
+`python -m app.database.init_db` once to add the non-null `users.role` column.
+Existing users receive the `STUDENT` role; no tables or rows are dropped.
+
+## Authentication
+
+The M3 authentication endpoints are:
+
+- `POST /api/auth/register` — accepts `name`, `email`, and `password`;
+  normalizes email and returns a safe user response with HTTP 201. New users
+  receive the `STUDENT` role.
+- `POST /api/auth/login` — accepts `email` and `password`; returns a bearer
+  access token and safe user response.
+- `GET /api/auth/me` — returns the authenticated user's safe profile.
+
+Passwords are stored as bcrypt hashes. Login tokens are signed with HS256
+using `SECRET_KEY` and expire after `ACCESS_TOKEN_EXPIRE_MINUTES`. Send the
+token to protected endpoints in the standard header:
+
+```http
+Authorization: Bearer <access_token>
+```
+
+Supported roles are `STUDENT` and `ADMIN`. Public registration cannot set the
+role; role-based authorization is available through the reusable
+`require_admin` dependency. No admin-only application endpoint is introduced
+in M3.
 
 ## Current milestones
 
@@ -81,7 +108,13 @@ re-running it is safe. The seed command also initializes missing tables.
 
 M2 provides the SQLAlchemy models, database session dependency, explicit
 development table initialization, and an idempotent question-bank seed
-command. Authentication, interview functionality, evaluation processing,
+command.
+
+### M3 - Authentication & Authorization
+
+M3 provides registration, login, current-user retrieval, bcrypt password
+hashing, JWT access tokens, and reusable role-based authorization
+dependencies. Dashboard, interview functionality, evaluation processing,
 reports, and deployment are not included in this milestone.
 
 ### M1 - Project Foundation
