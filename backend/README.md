@@ -117,6 +117,23 @@ Both endpoints require `Authorization: Bearer <access_token>`. Their queries
 are scoped to the authenticated user's ID. No sessions or evaluations are
 created as placeholder data.
 
+## Student job profiles
+
+Authenticated students can create and manage their own job profiles:
+
+- `POST /api/job-profiles` — create a profile with `job_title`,
+  `job_description`, and optional `experience_level`.
+- `GET /api/job-profiles` — list the current user's profiles.
+- `GET /api/job-profiles/{job_profile_id}` — retrieve an owned profile.
+- `DELETE /api/job-profiles/{job_profile_id}` — delete an owned profile
+  (returns HTTP 204).
+
+All routes require `Authorization: Bearer <access_token>`. Profile ownership
+is derived from the authenticated user; requests cannot specify an owner.
+Foreign-owned or missing profile IDs return HTTP 404. The profile data is
+stored for future personalization; no AI or question-generation behavior is
+included.
+
 The frontend provides `/login`, `/register`, and a protected `/dashboard`.
 From the repository root, run the backend with
 `cd backend; .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload` and
@@ -146,6 +163,12 @@ M4 provides the authenticated dashboard summary and recent-session endpoints,
 plus frontend login, registration, session persistence, protected routing, and
 the student dashboard. Interview functionality, evaluation processing,
 reports, and deployment are not included in this milestone.
+
+### M5-A - Student Job Profiles
+
+M5-A provides a user-owned job-profile table, validation schemas, service
+operations, and protected REST endpoints for creating, listing, retrieving,
+and deleting profiles. AI analysis and question generation are not included.
 
 ### M1 - Project Foundation
 

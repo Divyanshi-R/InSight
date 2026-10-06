@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.routers.auth import router as auth_router
 from app.routers.dashboard import router as dashboard_router
+from app.routers.job_profiles import router as job_profiles_router
 
 app = FastAPI(
     title="InSight - AI Interview Practice Platform",
@@ -28,6 +29,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(dashboard_router)
+app.include_router(job_profiles_router)
 
 
 @app.get("/api/health")
