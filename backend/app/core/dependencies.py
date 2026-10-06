@@ -8,9 +8,17 @@ from sqlalchemy.orm import Session
 from app.core.security import UserRole, decode_access_token
 from app.database.database import SessionLocal
 from app.database.models import User
+from app.services.ai_question_generator import (
+    AIQuestionGenerator,
+    OpenAICompatibleQuestionGenerator,
+)
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
+
+
+def get_ai_question_generator() -> AIQuestionGenerator:
+    return OpenAICompatibleQuestionGenerator()
 
 
 def get_db() -> Generator[Session, None, None]:

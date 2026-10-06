@@ -131,8 +131,28 @@ Authenticated students can create and manage their own job profiles:
 All routes require `Authorization: Bearer <access_token>`. Profile ownership
 is derived from the authenticated user; requests cannot specify an owner.
 Foreign-owned or missing profile IDs return HTTP 404. The profile data is
-stored for future personalization; no AI or question-generation behavior is
-included.
+stored for future personalization.
+
+## AI-generated interview questions
+
+Question generation is optional and performed only by the backend. Configure
+`AI_PROVIDER` (`openai_compatible`), `AI_API_KEY`, `AI_MODEL`, and optionally
+`AI_API_URL` in the backend environment. The API key is only required when
+generating questions; the application, database initialization, and tests can
+run without it. No key is sent to or stored by the frontend.
+
+- `POST /api/job-profiles/{job_profile_id}/questions/generate` — generate and
+  save up to 10 validated questions for an owned job profile.
+- `GET /api/job-profiles/{job_profile_id}/questions` — list saved questions
+  for an owned profile.
+- `PATCH /api/job-profiles/{job_profile_id}/questions/{question_id}` — update
+  only `approved_by_student`.
+
+All question routes require `Authorization: Bearer <access_token>`. Missing
+and foreign-owned profiles return HTTP 404. Generation requires a configured
+provider and returns a controlled error when configuration or the provider is
+unavailable. Automated tests use a fake generator and never call an external
+AI API.
 
 The frontend provides `/login`, `/register`, and a protected `/dashboard`.
 From the repository root, run the backend with
@@ -169,6 +189,13 @@ reports, and deployment are not included in this milestone.
 M5-A provides a user-owned job-profile table, validation schemas, service
 operations, and protected REST endpoints for creating, listing, retrieving,
 and deleting profiles. AI analysis and question generation are not included.
+
+### M5-C - AI-Generated Interview Questions
+
+M5-C adds the `job_questions` table, an optional OpenAI-compatible provider
+adapter, validated owner-scoped generation and retrieval, and student
+approval updates. It does not add an interview interface or expose AI
+credentials to the frontend.
 
 ### M1 - Project Foundation
 
