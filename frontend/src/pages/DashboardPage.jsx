@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { getDashboardRecent, getDashboardSummary } from '../services/api'
 
@@ -83,6 +83,7 @@ export default function DashboardPage() {
           <Brand />
           <nav className="header-nav" aria-label="Main navigation">
             <span className="nav-current"><span className="nav-dot" />Dashboard</span>
+            <Link className="nav-link" to="/job-profiles">Job Profiles</Link>
           </nav>
           <div className="header-account">
             <div className="account-copy">
@@ -106,6 +107,9 @@ export default function DashboardPage() {
             <h1>Welcome back, {user.name}<span className="welcome-period">.</span></h1>
             <p>Every great interview starts with showing up. You’re in the right place.</p>
           </div>
+          <Link className="button button-primary dashboard-profile-action" to="/job-profiles">
+            Job Profiles <span aria-hidden="true">→</span>
+          </Link>
           <div className="welcome-date">
             <span className="date-icon" aria-hidden="true">◷</span>
             <span>{new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date())}</span>

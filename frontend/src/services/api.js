@@ -65,3 +65,31 @@ export async function getDashboardSummary(token, { signal } = {}) {
 export async function getDashboardRecent(token, { signal } = {}) {
   return request('/api/dashboard/recent', { token, signal })
 }
+
+export async function getJobProfiles(token, { signal } = {}) {
+  return request('/api/job-profiles', { token, signal })
+}
+
+export async function getJobProfile(token, jobProfileId, { signal } = {}) {
+  return request(`/api/job-profiles/${encodeURIComponent(jobProfileId)}`, {
+    token,
+    signal,
+  })
+}
+
+export async function createJobProfile(token, profile, { signal } = {}) {
+  return request('/api/job-profiles', {
+    method: 'POST',
+    token,
+    signal,
+    body: JSON.stringify(profile),
+  })
+}
+
+export async function deleteJobProfile(token, jobProfileId, { signal } = {}) {
+  return request(`/api/job-profiles/${encodeURIComponent(jobProfileId)}`, {
+    method: 'DELETE',
+    token,
+    signal,
+  })
+}

@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './auth/useAuth'
 import DashboardPage from './pages/DashboardPage'
+import JobProfilesPage from './pages/JobProfilesPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import './App.css'
@@ -56,6 +57,22 @@ function App() {
         element={
           <ProtectedRoute>
             <DashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/job-profiles"
+        element={
+          <ProtectedRoute>
+            <JobProfilesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/job-profiles/:jobProfileId"
+        element={
+          <ProtectedRoute>
+            <JobProfilesPage />
           </ProtectedRoute>
         }
       />

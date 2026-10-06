@@ -6,6 +6,9 @@ dashboard routes:
 - `/login` — sign in using the backend authentication API.
 - `/register` — create a student account.
 - `/dashboard` — protected user-scoped session summary and recent sessions.
+- `/job-profiles` — protected list/create/delete experience for the current
+  user's saved job profiles.
+- `/job-profiles/:jobProfileId` — view one of the current user's saved profiles.
 
 ## Local development
 
