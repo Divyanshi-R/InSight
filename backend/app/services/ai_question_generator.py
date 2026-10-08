@@ -1,6 +1,9 @@
 import json
-from http.client import HTTPException as HTTPProtocolError
+import logging
+import re
+import time
 from abc import ABC, abstractmethod
+from http.client import HTTPException as HTTPProtocolError
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -10,6 +13,38 @@ from app.schemas.job_question import GeneratedQuestion, GeneratedQuestionData
 
 PROMPT_VERSION = "job-profile-v1"
 MAX_GENERATED_QUESTIONS = 10
+MAX_PROVIDER_ATTEMPTS = 3
+RETRYABLE_HTTP_STATUSES = {429, 500, 502, 503, 504}
+logger = logging.getLogger(__name__)
+
+
+def _redact_provider_diagnostic(value: str) -> str:
+    api_key = (
+        settings.AI_API_KEY.get_secret_value()
+        if settings.AI_API_KEY is not None
+        else ""
+    )
+    if api_key:
+        value = value.replace(api_key, "[REDACTED]")
+
+    value = re.sub(
+        r"(?i)\b(bearer\s+)[^\s,}\"']+",
+        r"\1[REDACTED]",
+        value,
+    )
+    value = re.sub(
+        r"(?i)(password|access[_-]?token|refresh[_-]?token|secret)"
+        r"([\"']?\s*[:=]\s*[\"']?)[^\"'\s,}]+",
+        r"\1\2[REDACTED]",
+        value,
+    )
+    value = re.sub(
+        r"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{10,}\."
+        r"[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}",
+        "[REDACTED_JWT]",
+        value,
+    )
+    return value[:2000]
 
 
 class QuestionGeneratorUnavailable(Exception):
@@ -73,28 +108,51 @@ class OpenAICompatibleQuestionGenerator(AIQuestionGenerator):
                 },
             ],
         }
-        try:
-            request = Request(
-                settings.AI_API_URL,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={
-                    "Authorization": f"Bearer {settings.AI_API_KEY.get_secret_value()}",
-                    "Content-Type": "application/json",
-                },
-                method="POST",
-            )
-            with urlopen(request, timeout=30) as response:
-                response_data: Any = json.loads(response.read())
-        except (
-            HTTPError,
-            URLError,
-            HTTPProtocolError,
-            TimeoutError,
-            OSError,
-            ValueError,
-            UnicodeError,
-        ):
-            raise QuestionGeneratorError("AI question generation failed") from None
+        request = Request(
+            settings.AI_API_URL,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {settings.AI_API_KEY.get_secret_value()}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        for attempt in range(MAX_PROVIDER_ATTEMPTS):
+            try:
+                with urlopen(request, timeout=30) as response:
+                    response_data: Any = json.loads(response.read())
+                break
+            except HTTPError as exc:
+                try:
+                    provider_error = exc.read(4096).decode("utf-8", errors="replace")
+                except OSError:
+                    provider_error = "error response body could not be read"
+                logger.warning(
+                    "AI question provider returned HTTP %s: %s",
+                    exc.code,
+                    _redact_provider_diagnostic(provider_error),
+                )
+                if (
+                    exc.code in RETRYABLE_HTTP_STATUSES
+                    and attempt < MAX_PROVIDER_ATTEMPTS - 1
+                ):
+                    time.sleep(2**attempt)
+                    continue
+                raise QuestionGeneratorError("AI question generation failed") from None
+            except (
+                URLError,
+                HTTPProtocolError,
+                TimeoutError,
+                OSError,
+                ValueError,
+                UnicodeError,
+            ) as exc:
+                logger.warning(
+                    "AI question provider request failed (%s): %s",
+                    type(exc).__name__,
+                    _redact_provider_diagnostic(str(exc)),
+                )
+                raise QuestionGeneratorError("AI question generation failed") from None
 
         try:
             content = response_data["choices"][0]["message"]["content"]
@@ -103,5 +161,9 @@ class OpenAICompatibleQuestionGenerator(AIQuestionGenerator):
             if not isinstance(raw_questions, list) or not 1 <= len(raw_questions) <= MAX_GENERATED_QUESTIONS:
                 raise ValueError("Unexpected questions list")
             return [GeneratedQuestion.model_validate(item) for item in raw_questions]
-        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
+        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            logger.warning(
+                "AI question provider response parsing failed (%s)",
+                type(exc).__name__,
+            )
             raise QuestionGeneratorError("AI provider returned an invalid response") from None

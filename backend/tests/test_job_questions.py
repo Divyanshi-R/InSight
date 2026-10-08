@@ -1,11 +1,15 @@
+import json
 import os
 import subprocess
 import sys
 from collections.abc import Callable
+from io import BytesIO
 from pathlib import Path
+from urllib.error import HTTPError
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -14,6 +18,10 @@ from app.core.dependencies import get_ai_question_generator
 from app.database.models import JobProfile, JobQuestion
 from app.schemas.job_question import GeneratedQuestion, GeneratedQuestionData
 from app.services.ai_question_generator import AIQuestionGenerator
+from app.services.ai_question_generator import (
+    OpenAICompatibleQuestionGenerator,
+    QuestionGeneratorError,
+)
 
 
 class FakeQuestionGenerator(AIQuestionGenerator):
@@ -495,6 +503,168 @@ def test_provider_failure_returns_controlled_error(
     assert response.status_code == 502
     assert response.json()["detail"] == "AI question generation failed"
     assert "private API details" not in response.text
+
+
+def test_provider_http_error_is_logged_with_secrets_redacted(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from app.services import ai_question_generator
+
+    api_key = "test-gemini-key-do-not-log"
+    access_token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signaturevalue"
+    error_body = (
+        '{"error":{"message":"Model is unavailable. Authorization: Bearer '
+        f'{access_token}; key={api_key}; password=do-not-log-password"}}'
+    ).encode()
+    provider_error = HTTPError(
+        url="https://provider.invalid/chat/completions",
+        code=400,
+        msg="Bad Request",
+        hdrs=None,
+        fp=BytesIO(error_body),
+    )
+
+    def raise_provider_error(*args: object, **kwargs: object) -> None:
+        raise provider_error
+
+    monkeypatch.setattr(settings, "AI_API_KEY", SecretStr(api_key))
+    monkeypatch.setattr(ai_question_generator, "urlopen", raise_provider_error)
+
+    with caplog.at_level("WARNING", logger=ai_question_generator.__name__):
+        with pytest.raises(QuestionGeneratorError):
+            OpenAICompatibleQuestionGenerator().generate_questions(
+                job_title="Software Engineer",
+                job_description="Build APIs",
+                experience_level=None,
+            )
+
+    assert "HTTP 400" in caplog.text
+    assert "Model is unavailable" in caplog.text
+    assert api_key not in caplog.text
+    assert access_token not in caplog.text
+    assert "do-not-log-password" not in caplog.text
+    assert "Authorization: Bearer [REDACTED]" in caplog.text
+
+
+def test_provider_retries_http_503_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import ai_question_generator
+
+    attempts = 0
+    delays: list[int] = []
+
+    def fake_urlopen(*args: object, **kwargs: object) -> BytesIO:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise HTTPError(
+                url="https://provider.invalid/chat/completions",
+                code=503,
+                msg="Service Unavailable",
+                hdrs=None,
+                fp=BytesIO(b'{"error":"temporarily unavailable"}'),
+            )
+        content = json.dumps(
+            {
+                "questions": [
+                    {
+                        "question": "How would you design a resilient API?",
+                        "question_type": "TECHNICAL",
+                        "difficulty": "MEDIUM",
+                        "skill_tags": ["API design"],
+                    }
+                ]
+            }
+        )
+        return BytesIO(
+            json.dumps(
+                {"choices": [{"message": {"content": content}}]}
+            ).encode()
+        )
+
+    monkeypatch.setattr(settings, "AI_API_KEY", SecretStr("test-key"))
+    monkeypatch.setattr(ai_question_generator, "urlopen", fake_urlopen)
+    monkeypatch.setattr(ai_question_generator.time, "sleep", delays.append)
+
+    questions = OpenAICompatibleQuestionGenerator().generate_questions(
+        job_title="Software Engineer",
+        job_description="Build APIs",
+        experience_level=None,
+    )
+
+    assert attempts == 2
+    assert delays == [1]
+    assert questions[0].question == "How would you design a resilient API?"
+
+
+def test_provider_stops_after_three_http_503_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import ai_question_generator
+
+    attempts = 0
+    delays: list[int] = []
+
+    def fake_urlopen(*args: object, **kwargs: object) -> None:
+        nonlocal attempts
+        attempts += 1
+        raise HTTPError(
+            url="https://provider.invalid/chat/completions",
+            code=503,
+            msg="Service Unavailable",
+            hdrs=None,
+            fp=BytesIO(b'{"error":"temporarily unavailable"}'),
+        )
+
+    monkeypatch.setattr(settings, "AI_API_KEY", SecretStr("test-key"))
+    monkeypatch.setattr(ai_question_generator, "urlopen", fake_urlopen)
+    monkeypatch.setattr(ai_question_generator.time, "sleep", delays.append)
+
+    with pytest.raises(QuestionGeneratorError):
+        OpenAICompatibleQuestionGenerator().generate_questions(
+            job_title="Software Engineer",
+            job_description="Build APIs",
+            experience_level=None,
+        )
+
+    assert attempts == 3
+    assert delays == [1, 2]
+
+
+def test_provider_does_not_retry_http_400(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import ai_question_generator
+
+    attempts = 0
+    delays: list[int] = []
+
+    def fake_urlopen(*args: object, **kwargs: object) -> None:
+        nonlocal attempts
+        attempts += 1
+        raise HTTPError(
+            url="https://provider.invalid/chat/completions",
+            code=400,
+            msg="Bad Request",
+            hdrs=None,
+            fp=BytesIO(b'{"error":"invalid request"}'),
+        )
+
+    monkeypatch.setattr(settings, "AI_API_KEY", SecretStr("test-key"))
+    monkeypatch.setattr(ai_question_generator, "urlopen", fake_urlopen)
+    monkeypatch.setattr(ai_question_generator.time, "sleep", delays.append)
+
+    with pytest.raises(QuestionGeneratorError):
+        OpenAICompatibleQuestionGenerator().generate_questions(
+            job_title="Software Engineer",
+            job_description="Build APIs",
+            experience_level=None,
+        )
+
+    assert attempts == 1
+    assert delays == []
 
 
 def test_missing_ai_key_does_not_prevent_startup_and_generation_is_disabled(
