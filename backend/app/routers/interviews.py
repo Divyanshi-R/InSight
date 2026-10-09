@@ -94,6 +94,7 @@ def save_interview_answer(
             session_id,
             question_id,
             request.answer_text,
+            request.duration_seconds,
         )
     except InterviewSessionNotFound:
         raise HTTPException(

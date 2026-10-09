@@ -575,3 +575,171 @@ def test_interview_session_reflects_in_dashboard_summary_and_recent(
     assert summary_after["total_sessions"] == 1
     assert summary_after["in_progress_sessions"] == 0
     assert summary_after["completed_sessions"] == 1
+
+
+def test_speech_analysis_metrics_computation() -> None:
+    from app.services.speech_analysis_service import (
+        analyze_speech,
+        calculate_words_per_minute,
+        count_words,
+        find_filler_words,
+    )
+
+    # Word count
+    assert count_words("") == 0
+    assert count_words("   ") == 0
+    assert count_words("one two three") == 3
+
+    # WPM
+    assert calculate_words_per_minute(100, 60.0) == 100.0
+    assert calculate_words_per_minute(60, 30.0) == 120.0
+    assert calculate_words_per_minute(0, 30.0) is None
+    assert calculate_words_per_minute(60, 0.0) is None
+    assert calculate_words_per_minute(60, None) is None
+
+    # Filler words - whole word regex matching (no substring false positives)
+    text = "Um, I think that like, basically we should literally use it, you know? But summer is warm."
+    fillers = find_filler_words(text)
+    assert fillers.get("um") == 1
+    assert fillers.get("like") == 1
+    assert fillers.get("basically") == 1
+    assert fillers.get("literally") == 1
+    assert fillers.get("you know") == 1
+    # 'summer' should NOT trigger 'um'
+    assert fillers.get("um") == 1
+
+    # Full analysis
+    result = analyze_speech(
+        "Um, FastAPI makes async endpoints very efficient, you know.",
+        duration_seconds=15.0,
+    )
+    assert result["word_count"] == 9
+    assert result["duration_seconds"] == 15.0
+    assert result["words_per_minute"] == 36.0
+    assert result["filler_words_count"] == 2
+    assert "um" in result["filler_words"]
+    assert "you know" in result["filler_words"]
+    assert result["pause_analysis"] == "Pause analysis is not yet available"
+
+
+def test_saving_answer_with_duration_persists_and_returns_speech_metrics(
+    interview_context: tuple[
+        TestClient, Callable[[str], tuple[int, str]], sessionmaker[Session]
+    ],
+) -> None:
+    from decimal import Decimal
+
+    client, create_user, session_factory = interview_context
+    _, token = create_user("speech-answer@example.com")
+    profile_id = create_profile_with_questions(client, session_factory, token)
+
+    session_resp = client.post(
+        "/api/interviews",
+        json={"job_profile_id": profile_id},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert session_resp.status_code == 201
+    session_data = session_resp.json()
+    first_q_id = session_data["questions"][0]["id"]
+
+    answer_text = (
+        "Um, FastAPI integrates with Pydantic for validation, and actually it is very fast."
+    )
+    save_resp = client.put(
+        f"/api/interviews/{session_data['id']}/answers/{first_q_id}",
+        json={"answer_text": answer_text, "duration_seconds": 25.5},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert save_resp.status_code == 200
+    saved = save_resp.json()
+    assert saved["question_id"] == first_q_id
+    assert saved["answer"] == answer_text
+    assert saved["answered"] is True
+    assert saved["duration_seconds"] == 25.5
+
+    metrics = saved["speech_metrics"]
+    assert metrics is not None
+    assert metrics["word_count"] == 13
+    assert metrics["duration_seconds"] == 25.5
+    assert metrics["words_per_minute"] == 30.6
+    assert metrics["filler_words_count"] >= 2  # 'um', 'actually'
+    assert metrics["pause_analysis"] == "Pause analysis is not yet available"
+
+    # Verify persistence in MySQL / DB
+    with session_factory() as db:
+        answer_row = db.scalar(
+            select(Answer).where(
+                Answer.session_id == session_data["id"],
+                Answer.job_question_id == first_q_id,
+            )
+        )
+        assert answer_row is not None
+        assert answer_row.transcript == answer_text
+        assert answer_row.duration_seconds == Decimal("25.50")
+
+
+def test_saving_answer_without_duration_remains_backward_compatible(
+    interview_context: tuple[
+        TestClient, Callable[[str], tuple[int, str]], sessionmaker[Session]
+    ],
+) -> None:
+    client, create_user, session_factory = interview_context
+    _, token = create_user("backward-compat-answer@example.com")
+    profile_id = create_profile_with_questions(client, session_factory, token)
+
+    session_data = client.post(
+        "/api/interviews",
+        json={"job_profile_id": profile_id},
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()
+    first_q_id = session_data["questions"][0]["id"]
+
+    save_resp = client.put(
+        f"/api/interviews/{session_data['id']}/answers/{first_q_id}",
+        json={"answer_text": "Written text answer without voice recording duration."},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert save_resp.status_code == 200
+    saved = save_resp.json()
+    assert saved["duration_seconds"] is None
+    assert saved["speech_metrics"]["duration_seconds"] is None
+    assert saved["speech_metrics"]["words_per_minute"] is None
+    assert saved["speech_metrics"]["word_count"] == 7
+
+
+def test_get_interview_includes_speech_metrics_for_answered_questions(
+    interview_context: tuple[
+        TestClient, Callable[[str], tuple[int, str]], sessionmaker[Session]
+    ],
+) -> None:
+    client, create_user, session_factory = interview_context
+    _, token = create_user("interview-metrics-get@example.com")
+    profile_id = create_profile_with_questions(client, session_factory, token)
+
+    session_data = client.post(
+        "/api/interviews",
+        json={"job_profile_id": profile_id},
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()
+    q_id = session_data["questions"][0]["id"]
+
+    client.put(
+        f"/api/interviews/{session_data['id']}/answers/{q_id}",
+        json={
+            "answer_text": "Like, we can use dependency injection to decouple components.",
+            "duration_seconds": 12.0,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    get_resp = client.get(
+        f"/api/interviews/{session_data['id']}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert get_resp.status_code == 200
+    questions = get_resp.json()["questions"]
+    answered_q = [q for q in questions if q["id"] == q_id][0]
+    assert answered_q["duration_seconds"] == 12.0
+    assert answered_q["speech_metrics"] is not None
+    assert answered_q["speech_metrics"]["words_per_minute"] == 45.0
+    assert answered_q["speech_metrics"]["filler_words_count"] >= 1

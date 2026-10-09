@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -9,7 +10,9 @@ from app.schemas.interview import (
     InterviewListItemResponse,
     InterviewQuestionItem,
     InterviewSessionResponse,
+    SpeechMetrics,
 )
+from app.services.speech_analysis_service import analyze_speech
 
 
 class InterviewProfileNotFound(Exception):
@@ -52,10 +55,14 @@ def build_interview_response(
 
     questions: list[InterviewQuestionItem] = []
     for ans in answers:
+        dur = float(ans.duration_seconds) if ans.duration_seconds is not None else None
+        has_answer = bool(ans.transcript and ans.transcript.strip())
+        metrics = analyze_speech(ans.transcript, dur) if has_answer else None
+        speech_metrics = SpeechMetrics.model_validate(metrics) if metrics is not None else None
+
         if ans.job_question_id is not None:
             jq = ans.job_question or db.get(JobQuestion, ans.job_question_id)
             if jq is not None:
-                has_answer = bool(ans.transcript and ans.transcript.strip())
                 questions.append(
                     InterviewQuestionItem(
                         id=jq.id,
@@ -65,12 +72,13 @@ def build_interview_response(
                         skill_tags=jq.skill_tags or [],
                         answer=ans.transcript,
                         answered=has_answer,
+                        duration_seconds=dur,
+                        speech_metrics=speech_metrics,
                     )
                 )
         elif ans.question_id is not None:
             q = ans.question or db.get(Question, ans.question_id)
             if q is not None:
-                has_answer = bool(ans.transcript and ans.transcript.strip())
                 questions.append(
                     InterviewQuestionItem(
                         id=q.id,
@@ -80,6 +88,8 @@ def build_interview_response(
                         skill_tags=[],
                         answer=ans.transcript,
                         answered=has_answer,
+                        duration_seconds=dur,
+                        speech_metrics=speech_metrics,
                     )
                 )
 
@@ -165,6 +175,7 @@ def update_answer(
     session_id: int,
     question_id: int,
     answer_text: str,
+    duration_seconds: float | None = None,
 ) -> InterviewAnswerResponse:
     session = db.get(InterviewSession, session_id)
     if session is None or session.user_id != user_id:
@@ -183,6 +194,11 @@ def update_answer(
     )
 
     clean_text = answer_text.strip() if answer_text else ""
+    parsed_duration = (
+        Decimal(str(round(duration_seconds, 2)))
+        if duration_seconds is not None and duration_seconds >= 0
+        else None
+    )
 
     if answer is None:
         jq = db.scalar(
@@ -200,19 +216,28 @@ def update_answer(
             job_question_id=question_id,
             question_id=None,
             transcript=clean_text or None,
+            duration_seconds=parsed_duration,
         )
         db.add(answer)
     else:
         answer.transcript = clean_text or None
+        if parsed_duration is not None:
+            answer.duration_seconds = parsed_duration
 
     db.commit()
     db.refresh(answer)
 
     has_answer = bool(answer.transcript and answer.transcript.strip())
+    dur = float(answer.duration_seconds) if answer.duration_seconds is not None else None
+    metrics = analyze_speech(answer.transcript, dur) if has_answer else None
+    speech_metrics = SpeechMetrics.model_validate(metrics) if metrics is not None else None
+
     return InterviewAnswerResponse(
         question_id=question_id,
         answer=answer.transcript,
         answered=has_answer,
+        duration_seconds=dur,
+        speech_metrics=speech_metrics,
     )
 
 

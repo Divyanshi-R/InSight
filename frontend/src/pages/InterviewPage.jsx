@@ -1,11 +1,16 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
+import { useVoiceRecorder } from '../hooks/useVoiceRecorder'
 import {
   completeInterview,
   getInterview,
   saveInterviewAnswer,
 } from '../services/api'
+import {
+  analyzeClientSpeech,
+  formatDuration,
+} from '../utils/speechMetrics'
 
 function formatDate(value) {
   if (!value) return 'N/A'
@@ -28,9 +33,27 @@ export default function InterviewPage() {
   const [error, setError] = useState('')
   const [currentIndex, setCurrentIndex] = useState(0)
   const [currentAnswer, setCurrentAnswer] = useState('')
+  const [currentDuration, setCurrentDuration] = useState(null)
   const [isSaving, setIsSaving] = useState(false)
   const [isFinishing, setIsFinishing] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
+
+  const {
+    isRecording,
+    recordingDuration,
+    audioUrl,
+    error: recorderError,
+    interimTranscript,
+    isSpeechRecognitionSupported,
+    startRecording,
+    stopRecording,
+    resetRecording,
+  } = useVoiceRecorder()
+
+  const effectiveDuration = isRecording ? recordingDuration : currentDuration
+  const clientMetrics = useMemo(() => {
+    return analyzeClientSpeech(currentAnswer, effectiveDuration)
+  }, [currentAnswer, effectiveDuration])
 
   const handleUnauthorized = useCallback(() => {
     logout()
@@ -51,9 +74,11 @@ export default function InterviewPage() {
           const resumeIdx = firstUnanswered !== -1 ? firstUnanswered : 0
           setCurrentIndex(resumeIdx)
           setCurrentAnswer(data.questions[resumeIdx]?.answer || '')
+          setCurrentDuration(data.questions[resumeIdx]?.duration_seconds || null)
         } else if (data.questions?.length > 0) {
           setCurrentIndex(0)
           setCurrentAnswer(data.questions[0]?.answer || '')
+          setCurrentDuration(data.questions[0]?.duration_seconds || null)
         }
       } catch (err) {
         if (err.status === 401) {
@@ -77,7 +102,7 @@ export default function InterviewPage() {
   }, [loadSession])
 
   const persistCurrentAnswer = useCallback(
-    async (targetQuestionId, textToSave) => {
+    async (targetQuestionId, textToSave, durationToSave = null) => {
       if (!session || !targetQuestionId) return true
       setIsSaving(true)
       setSaveMessage('Saving...')
@@ -86,13 +111,20 @@ export default function InterviewPage() {
           token,
           session.id,
           targetQuestionId,
-          textToSave
+          textToSave,
+          durationToSave
         )
         setSession((prev) => {
           if (!prev) return prev
           const nextQuestions = prev.questions.map((q) =>
             q.id === targetQuestionId
-              ? { ...q, answer: updated.answer, answered: updated.answered }
+              ? {
+                  ...q,
+                  answer: updated.answer,
+                  answered: updated.answered,
+                  duration_seconds: updated.duration_seconds,
+                  speech_metrics: updated.speech_metrics,
+                }
               : q
           )
           const nextAnsweredCount = nextQuestions.filter((q) => q.answered).length
@@ -119,27 +151,48 @@ export default function InterviewPage() {
     [session, token, handleUnauthorized]
   )
 
+  async function handleToggleRecording() {
+    if (isRecording) {
+      stopRecording()
+      setCurrentDuration(recordingDuration)
+    } else {
+      await startRecording({
+        onTranscriptUpdate: (newText) => {
+          setCurrentAnswer(newText)
+        },
+      })
+    }
+  }
+
   async function handleNavigate(nextIndex) {
     if (!session || nextIndex < 0 || nextIndex >= session.questions.length) return
+
+    if (isRecording) {
+      stopRecording()
+    }
+    resetRecording()
 
     const currentQ = session.questions[currentIndex]
     if (currentQ) {
       const trimmedCurrent = currentAnswer.trim()
       const existingAnswer = (currentQ.answer || '').trim()
-      if (trimmedCurrent !== existingAnswer) {
-        await persistCurrentAnswer(currentQ.id, currentAnswer)
+      const effectiveDuration = isRecording ? recordingDuration : currentDuration
+      if (trimmedCurrent !== existingAnswer || (effectiveDuration != null && effectiveDuration !== currentQ.duration_seconds)) {
+        await persistCurrentAnswer(currentQ.id, currentAnswer, effectiveDuration)
       }
     }
 
     setCurrentIndex(nextIndex)
     setCurrentAnswer(session.questions[nextIndex]?.answer || '')
+    setCurrentDuration(session.questions[nextIndex]?.duration_seconds || null)
     setSaveMessage('')
   }
 
   async function handleManualSave() {
     const currentQ = session?.questions[currentIndex]
     if (!currentQ) return
-    await persistCurrentAnswer(currentQ.id, currentAnswer)
+    const effectiveDuration = isRecording ? recordingDuration : currentDuration
+    await persistCurrentAnswer(currentQ.id, currentAnswer, effectiveDuration)
   }
 
   async function handleFinish() {
@@ -149,12 +202,17 @@ export default function InterviewPage() {
     )
     if (!confirmed) return
 
+    if (isRecording) {
+      stopRecording()
+    }
+
     setIsFinishing(true)
     setError('')
     try {
       const currentQ = session.questions[currentIndex]
       if (currentQ) {
-        await persistCurrentAnswer(currentQ.id, currentAnswer)
+        const effectiveDuration = isRecording ? recordingDuration : currentDuration
+        await persistCurrentAnswer(currentQ.id, currentAnswer, effectiveDuration)
       }
 
       const completed = await completeInterview(token, session.id)
@@ -319,6 +377,24 @@ export default function InterviewPage() {
                       <p className="answer-content">
                         {q.answer ? q.answer : <em className="unanswered-text">No answer submitted.</em>}
                       </p>
+                      {q.speech_metrics && q.speech_metrics.word_count > 0 && (
+                        <div className="review-speech-metrics" aria-label="Speech delivery metrics">
+                          <span className="speech-metric-badge" title="Answer duration">
+                            ⏱ {q.speech_metrics.duration_seconds != null ? `${Math.round(q.speech_metrics.duration_seconds)}s` : 'Written'}
+                          </span>
+                          <span className="speech-metric-badge" title="Word count">
+                            📝 {q.speech_metrics.word_count} words
+                          </span>
+                          {q.speech_metrics.words_per_minute != null && (
+                            <span className="speech-metric-badge" title="Speaking pace in Words Per Minute">
+                              ⚡ {q.speech_metrics.words_per_minute} WPM
+                            </span>
+                          )}
+                          <span className="speech-metric-badge" title="Filler word count">
+                            💬 {q.speech_metrics.filler_words_count} fillers
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </article>
                 ))}
@@ -380,9 +456,100 @@ export default function InterviewPage() {
                   </div>
                 )}
 
+                {/* M7 Voice Recording & Speech-to-Text Interface */}
+                <div className="voice-recorder-section" aria-label="Voice response recorder">
+                  <div className="voice-recorder-header">
+                    <div className="voice-title-wrap">
+                      <span className="mic-icon" aria-hidden="true">🎙</span>
+                      <span className="voice-section-title">Voice Answer & Live Transcription</span>
+                    </div>
+                    {!isSpeechRecognitionSupported && (
+                      <span className="browser-support-tag" title="Web Speech API not available in this browser">
+                        Manual transcription
+                      </span>
+                    )}
+                  </div>
+
+                  {recorderError && (
+                    <div className="dashboard-error voice-error-alert" role="alert">
+                      <span>{recorderError}</span>
+                    </div>
+                  )}
+
+                  {!isSpeechRecognitionSupported && (
+                    <div className="voice-browser-notice">
+                      <span>
+                        ℹ️ <strong>Browser note:</strong> Real-time speech-to-text uses the Web Speech API (supported in Chrome, Edge, and Chromium browsers). You can still record audio for review and type or edit your answer in the editor below.
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="voice-controls-bar">
+                    {!isRecording ? (
+                      <div className="voice-idle-controls">
+                        <button
+                          type="button"
+                          className="button button-primary record-button"
+                          disabled={isSaving}
+                          onClick={handleToggleRecording}
+                        >
+                          <span className="record-dot-icon" aria-hidden="true" />
+                          {audioUrl ? 'Record Again' : 'Record Answer'}
+                        </button>
+                        <span className="voice-hint">
+                          {audioUrl
+                            ? 'You can re-record your answer or edit your response text below.'
+                            : 'Click to speak your answer. Your speech will be transcribed in real time.'}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="voice-active-controls">
+                        <div className="recording-status-pill">
+                          <span className="recording-pulse-dot" aria-hidden="true" />
+                          <span>Recording...</span>
+                          <span className="recording-timer">{formatDuration(recordingDuration)}</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="button button-danger stop-record-button"
+                          onClick={handleToggleRecording}
+                        >
+                          ⏹ Stop Recording
+                        </button>
+                      </div>
+                    )}
+
+                    {audioUrl && !isRecording && (
+                      <div className="voice-playback-wrap">
+                        <span className="playback-label">Review audio:</span>
+                        <audio
+                          controls
+                          src={audioUrl}
+                          className="voice-audio-player"
+                          aria-label="Recorded answer playback"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {isRecording && interimTranscript && (
+                    <div className="voice-interim-box" aria-live="polite">
+                      <span className="interim-label">Listening:</span>
+                      <p className="interim-text">"{interimTranscript}"</p>
+                    </div>
+                  )}
+                </div>
+
                 <div className="interview-input-area">
                   <div className="input-area-header">
-                    <label htmlFor="answer-input">Your response</label>
+                    <label htmlFor="answer-input">
+                      Your response
+                      {currentDuration != null && (
+                        <span className="recorded-pill">
+                          Recorded ({Math.round(currentDuration)}s)
+                        </span>
+                      )}
+                    </label>
                     <span className="char-count">{currentAnswer.length} characters</span>
                   </div>
                   <textarea
@@ -391,9 +558,78 @@ export default function InterviewPage() {
                     maxLength={20000}
                     value={currentAnswer}
                     onChange={(e) => setCurrentAnswer(e.target.value)}
-                    placeholder="Type your answer here... Be clear, direct, and structured in your explanation."
+                    placeholder="Type or speak your answer here... You can freely edit or expand your answer before saving."
                   />
                 </div>
+
+                {/* M7 Speech Delivery Summary */}
+                {clientMetrics.word_count > 0 && (
+                  <div className="speech-metrics-card" aria-label="Speech delivery analysis">
+                    <div className="speech-metrics-header">
+                      <span className="speech-metrics-title">📊 Speech Delivery Summary</span>
+                      {effectiveDuration != null ? (
+                        <span className="delivery-mode-tag">🎙 Recorded ({formatDuration(effectiveDuration)})</span>
+                      ) : (
+                        <span className="delivery-mode-tag">✍ Written</span>
+                      )}
+                    </div>
+
+                    <div className="speech-metrics-grid">
+                      <div className="speech-metric-item">
+                        <span className="metric-name">Duration</span>
+                        <span className="metric-number">
+                          {effectiveDuration != null ? `${Math.round(effectiveDuration)}s` : 'Written'}
+                        </span>
+                      </div>
+
+                      <div className="speech-metric-item">
+                        <span className="metric-name">Word Count</span>
+                        <span className="metric-number">{clientMetrics.word_count}</span>
+                      </div>
+
+                      <div className="speech-metric-item">
+                        <span className="metric-name">Pacing</span>
+                        <span className="metric-number">
+                          {clientMetrics.words_per_minute != null
+                            ? `${clientMetrics.words_per_minute} WPM`
+                            : '—'}
+                        </span>
+                        <span className="metric-subtext">
+                          {clientMetrics.words_per_minute != null
+                            ? clientMetrics.words_per_minute < 110
+                              ? 'Deliberate pace'
+                              : clientMetrics.words_per_minute <= 165
+                              ? 'Conversational pace'
+                              : 'Brisk pace'
+                            : 'Available with audio'}
+                        </span>
+                      </div>
+
+                      <div className="speech-metric-item">
+                        <span className="metric-name">Filler Words</span>
+                        <span className="metric-number">{clientMetrics.filler_words_count}</span>
+                        {clientMetrics.filler_words_count > 0 && (
+                          <div className="filler-tags-list">
+                            {Object.entries(clientMetrics.filler_words).map(([word, count]) => (
+                              <span className="filler-word-pill" key={word}>
+                                "{word}" ({count})
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="speech-metrics-footer">
+                      <span className="pause-notice">
+                        ⏸ <em>{clientMetrics.pause_analysis}</em>
+                      </span>
+                      <p className="speech-disclaimer">
+                        * Pacing and filler word metrics are provided for delivery awareness only and do not evaluate candidate competence, knowledge, or confidence.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="interview-nav-actions">
                   <div className="nav-actions-left">

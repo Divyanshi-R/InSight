@@ -143,14 +143,25 @@ export async function getInterview(token, sessionId, { signal } = {}) {
   })
 }
 
-export async function saveInterviewAnswer(token, sessionId, questionId, answerText, { signal } = {}) {
+export async function saveInterviewAnswer(
+  token,
+  sessionId,
+  questionId,
+  answerText,
+  durationSeconds = null,
+  { signal } = {}
+) {
+  const body = { answer_text: answerText }
+  if (durationSeconds != null && durationSeconds >= 0) {
+    body.duration_seconds = durationSeconds
+  }
   return request(
     `/api/interviews/${encodeURIComponent(sessionId)}/answers/${encodeURIComponent(questionId)}`,
     {
       method: 'PUT',
       token,
       signal,
-      body: JSON.stringify({ answer_text: answerText }),
+      body: JSON.stringify(body),
     }
   )
 }
