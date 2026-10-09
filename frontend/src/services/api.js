@@ -93,3 +93,76 @@ export async function deleteJobProfile(token, jobProfileId, { signal } = {}) {
     signal,
   })
 }
+
+export async function getJobProfileQuestions(token, jobProfileId, { signal } = {}) {
+  return request(`/api/job-profiles/${encodeURIComponent(jobProfileId)}/questions`, {
+    token,
+    signal,
+  })
+}
+
+export async function generateJobProfileQuestions(token, jobProfileId, { signal } = {}) {
+  return request(`/api/job-profiles/${encodeURIComponent(jobProfileId)}/questions/generate`, {
+    method: 'POST',
+    token,
+    signal,
+  })
+}
+
+export async function updateJobProfileQuestionApproval(
+  token,
+  jobProfileId,
+  questionId,
+  approved,
+  { signal } = {}
+) {
+  return request(
+    `/api/job-profiles/${encodeURIComponent(jobProfileId)}/questions/${encodeURIComponent(questionId)}`,
+    {
+      method: 'PATCH',
+      token,
+      signal,
+      body: JSON.stringify({ approved_by_student: approved }),
+    }
+  )
+}
+
+export async function startInterview(token, jobProfileId, { signal } = {}) {
+  return request('/api/interviews', {
+    method: 'POST',
+    token,
+    signal,
+    body: JSON.stringify({ job_profile_id: jobProfileId }),
+  })
+}
+
+export async function getInterview(token, sessionId, { signal } = {}) {
+  return request(`/api/interviews/${encodeURIComponent(sessionId)}`, {
+    token,
+    signal,
+  })
+}
+
+export async function saveInterviewAnswer(token, sessionId, questionId, answerText, { signal } = {}) {
+  return request(
+    `/api/interviews/${encodeURIComponent(sessionId)}/answers/${encodeURIComponent(questionId)}`,
+    {
+      method: 'PUT',
+      token,
+      signal,
+      body: JSON.stringify({ answer_text: answerText }),
+    }
+  )
+}
+
+export async function completeInterview(token, sessionId, { signal } = {}) {
+  return request(`/api/interviews/${encodeURIComponent(sessionId)}/complete`, {
+    method: 'POST',
+    token,
+    signal,
+  })
+}
+
+export async function getUserInterviews(token, { signal } = {}) {
+  return request('/api/interviews', { token, signal })
+}

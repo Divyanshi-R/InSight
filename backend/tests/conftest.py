@@ -13,6 +13,7 @@ from app.database.base import Base
 from app.database.models import User
 from app.routers.auth import router as auth_router
 from app.routers.dashboard import router as dashboard_router
+from app.routers.interviews import router as interviews_router
 from app.routers.job_profiles import router as job_profiles_router
 
 
@@ -33,6 +34,7 @@ def auth_test_context() -> Generator[tuple[TestClient, sessionmaker[Session]], N
     test_app = FastAPI()
     test_app.include_router(auth_router)
     test_app.include_router(dashboard_router)
+    test_app.include_router(interviews_router)
     test_app.include_router(job_profiles_router)
 
     def override_get_db() -> Generator[Session, None, None]:

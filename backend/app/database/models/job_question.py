@@ -34,3 +34,8 @@ class JobQuestion(Base):
     )
 
     job_profile: Mapped["JobProfile"] = relationship(back_populates="questions")
+    answers: Mapped[list["Answer"]] = relationship(
+        back_populates="job_question",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )

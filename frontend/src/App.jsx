@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './auth/useAuth'
 import DashboardPage from './pages/DashboardPage'
+import InterviewPage from './pages/InterviewPage'
 import JobProfilesPage from './pages/JobProfilesPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
@@ -73,6 +74,14 @@ function App() {
         element={
           <ProtectedRoute>
             <JobProfilesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/interview/:sessionId"
+        element={
+          <ProtectedRoute>
+            <InterviewPage />
           </ProtectedRoute>
         }
       />

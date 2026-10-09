@@ -19,7 +19,9 @@ class Answer(Base):
     __tablename__ = "answers"
     __table_args__ = (
         UniqueConstraint("session_id", "question_id", name="uq_answers_session_question"),
+        UniqueConstraint("session_id", "job_question_id", name="uq_answers_session_job_question"),
         Index("ix_answers_question_id", "question_id"),
+        Index("ix_answers_job_question_id", "job_question_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -28,8 +30,12 @@ class Answer(Base):
         nullable=False,
         index=True,
     )
-    question_id: Mapped[int] = mapped_column(
-        ForeignKey("questions.id"), nullable=False
+    question_id: Mapped[int | None] = mapped_column(
+        ForeignKey("questions.id"), nullable=True
+    )
+    job_question_id: Mapped[int | None] = mapped_column(
+        ForeignKey("job_questions.id", ondelete="CASCADE"),
+        nullable=True,
     )
     transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
     duration_seconds: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
@@ -38,7 +44,8 @@ class Answer(Base):
     )
 
     interview_session: Mapped["InterviewSession"] = relationship(back_populates="answers")
-    question: Mapped["Question"] = relationship(back_populates="answers")
+    question: Mapped["Question | None"] = relationship(back_populates="answers")
+    job_question: Mapped["JobQuestion | None"] = relationship(back_populates="answers")
     evaluation: Mapped["Evaluation | None"] = relationship(
         back_populates="answer",
         cascade="all, delete-orphan",

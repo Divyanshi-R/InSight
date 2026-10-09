@@ -4,8 +4,12 @@ import { useAuth } from '../auth/useAuth'
 import {
   createJobProfile,
   deleteJobProfile,
+  generateJobProfileQuestions,
   getJobProfile,
+  getJobProfileQuestions,
   getJobProfiles,
+  startInterview,
+  updateJobProfileQuestionApproval,
 } from '../services/api'
 
 function formatDate(value) {
@@ -32,6 +36,12 @@ export default function JobProfilesPage() {
   const [jobTitle, setJobTitle] = useState('')
   const [jobDescription, setJobDescription] = useState('')
   const [experienceLevel, setExperienceLevel] = useState('')
+  const [questions, setQuestions] = useState(null)
+  const [isLoadingQuestions, setIsLoadingQuestions] = useState(false)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [questionsError, setQuestionsError] = useState('')
+  const [isStartingInterview, setIsStartingInterview] = useState(false)
+  const [togglingId, setTogglingId] = useState(null)
 
   const handleUnauthorized = useCallback(() => {
     logout()
@@ -58,6 +68,21 @@ export default function JobProfilesPage() {
     return () => controller.abort()
   }, [loadProfiles])
 
+  const loadQuestions = useCallback(async (signal) => {
+    if (!jobProfileId) return
+    setIsLoadingQuestions(true)
+    setQuestionsError('')
+    try {
+      const result = await getJobProfileQuestions(token, jobProfileId, { signal })
+      setQuestions(result.questions)
+    } catch (requestError) {
+      if (requestError.status === 401) handleUnauthorized()
+      else if (requestError.name !== 'AbortError') setQuestionsError(requestError.message)
+    } finally {
+      if (!signal.aborted) setIsLoadingQuestions(false)
+    }
+  }, [jobProfileId, token, handleUnauthorized])
+
   useEffect(() => {
     if (!jobProfileId) return undefined
 
@@ -65,16 +90,69 @@ export default function JobProfilesPage() {
     Promise.resolve()
       .then(() => {
         setSelectedProfile(null)
+        setQuestions(null)
         setError('')
         return getJobProfile(token, jobProfileId, { signal: controller.signal })
       })
-      .then((profile) => setSelectedProfile(profile))
+      .then((profile) => {
+        setSelectedProfile(profile)
+        return loadQuestions(controller.signal)
+      })
       .catch((requestError) => {
         if (requestError.status === 401) handleUnauthorized()
         else if (requestError.name !== 'AbortError') setError(requestError.message)
       })
     return () => controller.abort()
-  }, [jobProfileId, token, handleUnauthorized])
+  }, [jobProfileId, token, handleUnauthorized, loadQuestions])
+
+  async function handleGenerateQuestions() {
+    setIsGenerating(true)
+    setQuestionsError('')
+    try {
+      const result = await generateJobProfileQuestions(token, jobProfileId)
+      setQuestions(result.questions)
+    } catch (requestError) {
+      if (requestError.status === 401) handleUnauthorized()
+      else setQuestionsError(requestError.message)
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
+  async function handleToggleApproval(question) {
+    setTogglingId(question.id)
+    setQuestionsError('')
+    const nextApproved = !question.approved_by_student
+    try {
+      const updated = await updateJobProfileQuestionApproval(
+        token,
+        jobProfileId,
+        question.id,
+        nextApproved
+      )
+      setQuestions((current) =>
+        current?.map((q) => (q.id === question.id ? updated : q))
+      )
+    } catch (requestError) {
+      if (requestError.status === 401) handleUnauthorized()
+      else setQuestionsError(requestError.message)
+    } finally {
+      setTogglingId(null)
+    }
+  }
+
+  async function handleStartInterview() {
+    setIsStartingInterview(true)
+    setQuestionsError('')
+    try {
+      const session = await startInterview(token, selectedProfile.id)
+      navigate(`/interview/${session.id}`)
+    } catch (requestError) {
+      if (requestError.status === 401) handleUnauthorized()
+      else setQuestionsError(requestError.message)
+      setIsStartingInterview(false)
+    }
+  }
 
   function validateForm() {
     if (!jobTitle.trim()) {
@@ -208,7 +286,8 @@ export default function JobProfilesPage() {
 
         {jobProfileId ? (
           selectedProfile && String(selectedProfile.id) === jobProfileId ? (
-            <article className="profile-detail-card">
+            <>
+              <article className="profile-detail-card">
               <div className="profile-detail-top">
                 <div>
                   <span className="eyebrow">SAVED JOB PROFILE</span>
@@ -240,7 +319,138 @@ export default function JobProfilesPage() {
                 </button>
               </div>
             </article>
-          ) : error ? (
+
+            <section className="profile-questions-section" aria-label="Interview questions">
+              <div className="questions-section-header">
+                <div>
+                  <span className="eyebrow">PRACTICE PREPARATION</span>
+                  <h2>Generated Questions</h2>
+                  <p>
+                    {questions?.length
+                      ? `${questions.filter((q) => q.approved_by_student).length} of ${questions.length} questions approved for practice.`
+                      : 'Generate questions tailored to this role and select which ones you want to practice.'}
+                  </p>
+                </div>
+                <div className="questions-header-actions">
+                  {questions && questions.length > 0 && (
+                    <button
+                      className="button button-quiet"
+                      type="button"
+                      disabled={isGenerating}
+                      onClick={handleGenerateQuestions}
+                    >
+                      {isGenerating ? 'Generating...' : '+ Generate more'}
+                    </button>
+                  )}
+                  {questions && questions.length > 0 && (
+                    <button
+                      className="button button-primary start-interview-button"
+                      type="button"
+                      disabled={
+                        isStartingInterview ||
+                        questions.filter((q) => q.approved_by_student).length === 0
+                      }
+                      onClick={handleStartInterview}
+                      title={
+                        questions.filter((q) => q.approved_by_student).length === 0
+                          ? 'Approve at least one question to start an interview'
+                          : 'Start interview practice'
+                      }
+                    >
+                      {isStartingInterview ? 'Starting session...' : 'Start Interview'}
+                      <span aria-hidden="true">→</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {questionsError && (
+                <div className="dashboard-error questions-error" role="alert">
+                  <span>{questionsError}</span>
+                  <button
+                    className="text-button"
+                    type="button"
+                    onClick={() => loadQuestions(new AbortController().signal)}
+                  >
+                    Try again
+                  </button>
+                </div>
+              )}
+
+              {isLoadingQuestions ? (
+                <div className="sessions-panel dashboard-loading" role="status">
+                  Loading interview questions...
+                </div>
+              ) : isGenerating ? (
+                <div className="sessions-panel dashboard-loading" role="status">
+                  Generating AI questions tailored to {selectedProfile.job_title}...
+                </div>
+              ) : questions?.length ? (
+                <div className="questions-list">
+                  {questions.map((question, index) => (
+                    <article
+                      className={`question-card ${
+                        question.approved_by_student ? 'question-card--approved' : ''
+                      }`}
+                      key={question.id}
+                    >
+                      <div className="question-card-top">
+                        <div className="question-badges">
+                          <span className="question-index">#{index + 1}</span>
+                          <span className="question-pill question-pill--type">
+                            {question.question_type}
+                          </span>
+                          <span className="question-pill question-pill--difficulty">
+                            {question.difficulty}
+                          </span>
+                        </div>
+                        <label className="question-approve-label">
+                          <input
+                            type="checkbox"
+                            checked={question.approved_by_student}
+                            disabled={togglingId === question.id}
+                            onChange={() => handleToggleApproval(question)}
+                          />
+                          <span>{question.approved_by_student ? 'Approved' : 'Approve'}</span>
+                        </label>
+                      </div>
+                      <p className="question-text">{question.question}</p>
+                      {question.skill_tags?.length > 0 && (
+                        <div className="question-tags">
+                          {question.skill_tags.map((tag) => (
+                            <span className="skill-tag" key={tag}>
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state questions-empty-state">
+                  <div className="empty-art" aria-hidden="true">
+                    <span className="empty-spark spark-a">✳</span>
+                    <span className="empty-spark spark-b">✦</span>
+                  </div>
+                  <h3>No questions generated yet</h3>
+                  <p>
+                    Generate AI interview questions based on {selectedProfile.job_title} to practice answering them.
+                  </p>
+                  <button
+                    className="button button-primary empty-create-button"
+                    type="button"
+                    disabled={isGenerating}
+                    onClick={handleGenerateQuestions}
+                  >
+                    {isGenerating ? 'Generating questions...' : 'Generate interview questions'}
+                    {!isGenerating && <span aria-hidden="true">→</span>}
+                  </button>
+                </div>
+              )}
+            </section>
+          </>
+        ) : error ? (
             <div className="profile-load-error" role="alert">
               <p>{error}</p>
               <Link className="button button-quiet" to="/job-profiles">Back to profiles</Link>

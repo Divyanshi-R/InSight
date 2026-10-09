@@ -36,3 +36,6 @@ class JobProfile(Base):
         passive_deletes=True,
         order_by="JobQuestion.created_at.desc(), JobQuestion.id.desc()",
     )
+    interview_sessions: Mapped[list["InterviewSession"]] = relationship(
+        back_populates="job_profile",
+    )

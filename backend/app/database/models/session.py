@@ -13,6 +13,11 @@ class InterviewSession(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    job_profile_id: Mapped[int | None] = mapped_column(
+        ForeignKey("job_profiles.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     started_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
@@ -25,6 +30,9 @@ class InterviewSession(Base):
     )
 
     user: Mapped["User"] = relationship(back_populates="interview_sessions")
+    job_profile: Mapped["JobProfile | None"] = relationship(
+        back_populates="interview_sessions"
+    )
     answers: Mapped[list["Answer"]] = relationship(
         back_populates="interview_session",
         cascade="all, delete-orphan",

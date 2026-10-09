@@ -182,12 +182,30 @@ export default function DashboardPage() {
               </div>
               {sessions.map((session) => (
                 <article className="session-row" key={session.id}>
-                  <span className="session-id"><span className="session-symbol">↗</span> Practice session #{session.id}</span>
+                  <Link
+                    to={`/interview/${session.id}`}
+                    className="session-id session-link"
+                    title={
+                      session.status === 'IN_PROGRESS'
+                        ? 'Resume practice interview'
+                        : 'View practice interview'
+                    }
+                  >
+                    <span className="session-symbol">↗</span> Practice session #{session.id}
+                  </Link>
                   <time dateTime={session.started_at}>{formatDate(session.started_at)}</time>
-                  <span className={`status-pill status-pill--${session.status.toLowerCase().replace('_', '-')}`}>
-                    <span className="status-dot" />
-                    {session.status.replaceAll('_', ' ').toLowerCase()}
-                  </span>
+                  <div className="session-row-status">
+                    <span className={`status-pill status-pill--${session.status.toLowerCase().replace('_', '-')}`}>
+                      <span className="status-dot" />
+                      {session.status.replaceAll('_', ' ').toLowerCase()}
+                    </span>
+                    <Link
+                      to={`/interview/${session.id}`}
+                      className="button button-quiet button-sm session-action-btn"
+                    >
+                      {session.status === 'IN_PROGRESS' ? 'Resume →' : 'Review →'}
+                    </Link>
+                  </div>
                 </article>
               ))}
             </div>
