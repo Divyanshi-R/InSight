@@ -40,6 +40,7 @@ export default function JobProfilesPage() {
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [questionsError, setQuestionsError] = useState('')
+  const [failedQuestionsAction, setFailedQuestionsAction] = useState(null)
   const [isStartingInterview, setIsStartingInterview] = useState(false)
   const [togglingId, setTogglingId] = useState(null)
 
@@ -72,12 +73,16 @@ export default function JobProfilesPage() {
     if (!jobProfileId) return
     setIsLoadingQuestions(true)
     setQuestionsError('')
+    setFailedQuestionsAction(null)
     try {
       const result = await getJobProfileQuestions(token, jobProfileId, { signal })
       setQuestions(result.questions)
     } catch (requestError) {
       if (requestError.status === 401) handleUnauthorized()
-      else if (requestError.name !== 'AbortError') setQuestionsError(requestError.message)
+      else if (requestError.name !== 'AbortError') {
+        setQuestionsError(requestError.message)
+        setFailedQuestionsAction('load')
+      }
     } finally {
       if (!signal.aborted) setIsLoadingQuestions(false)
     }
@@ -108,12 +113,16 @@ export default function JobProfilesPage() {
   async function handleGenerateQuestions() {
     setIsGenerating(true)
     setQuestionsError('')
+    setFailedQuestionsAction(null)
     try {
-      const result = await generateJobProfileQuestions(token, jobProfileId)
-      setQuestions(result.questions)
+      await generateJobProfileQuestions(token, jobProfileId)
+      await loadQuestions(new AbortController().signal)
     } catch (requestError) {
       if (requestError.status === 401) handleUnauthorized()
-      else setQuestionsError(requestError.message)
+      else {
+        setQuestionsError(requestError.message)
+        setFailedQuestionsAction('generate')
+      }
     } finally {
       setIsGenerating(false)
     }
@@ -122,6 +131,7 @@ export default function JobProfilesPage() {
   async function handleToggleApproval(question) {
     setTogglingId(question.id)
     setQuestionsError('')
+    setFailedQuestionsAction(null)
     const nextApproved = !question.approved_by_student
     try {
       const updated = await updateJobProfileQuestionApproval(
@@ -370,7 +380,13 @@ export default function JobProfilesPage() {
                   <button
                     className="text-button"
                     type="button"
-                    onClick={() => loadQuestions(new AbortController().signal)}
+                    onClick={() => {
+                      if (failedQuestionsAction === 'generate') {
+                        handleGenerateQuestions()
+                      } else {
+                        loadQuestions(new AbortController().signal)
+                      }
+                    }}
                   >
                     Try again
                   </button>

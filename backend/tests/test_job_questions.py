@@ -417,6 +417,157 @@ def test_duplicate_questions_within_generation_and_existing_profile_are_skipped(
         assert len(stored) == 2
 
 
+def test_generating_additional_questions_preserves_existing_questions_and_approvals(
+    job_question_context: tuple[
+        TestClient,
+        Callable[[str], tuple[int, str]],
+        sessionmaker[Session],
+    ],
+) -> None:
+    client, create_user, session_factory = job_question_context
+    _, token = create_user("generate-more-preserve@example.com")
+    profile = create_profile(client, token)
+
+    batch_one = [
+        GeneratedQuestion(
+            question="What is dependency injection in FastAPI?",
+            question_type="TECHNICAL",
+            difficulty="MEDIUM",
+            skill_tags=["FastAPI"],
+        ),
+        GeneratedQuestion(
+            question="Describe your experience with relational databases.",
+            question_type="CONCEPTUAL",
+            difficulty="EASY",
+            skill_tags=["Databases"],
+        ),
+    ]
+    install_generator(client, FakeQuestionGenerator(result=batch_one))
+    first_resp = client.post(
+        f"/api/job-profiles/{profile['id']}/questions/generate",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert first_resp.status_code == 201
+    first_questions = first_resp.json()["questions"]
+    assert len(first_questions) == 2
+
+    approved_id = first_questions[0]["id"]
+    approval_resp = client.patch(
+        f"/api/job-profiles/{profile['id']}/questions/{approved_id}",
+        json={"approved_by_student": True},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert approval_resp.status_code == 200
+    assert approval_resp.json()["approved_by_student"] is True
+
+    batch_two = [
+        GeneratedQuestion(
+            question="What is dependency injection in FastAPI?",  # duplicate of batch 1
+            question_type="TECHNICAL",
+            difficulty="MEDIUM",
+            skill_tags=["FastAPI"],
+        ),
+        GeneratedQuestion(
+            question="How do you handle migrations safely?",  # new
+            question_type="SCENARIO",
+            difficulty="HARD",
+            skill_tags=["Migrations", "MySQL"],
+        ),
+    ]
+    install_generator(client, FakeQuestionGenerator(result=batch_two))
+    second_resp = client.post(
+        f"/api/job-profiles/{profile['id']}/questions/generate",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert second_resp.status_code == 201
+    second_questions = second_resp.json()["questions"]
+    assert len(second_questions) == 1
+    assert second_questions[0]["question"] == "How do you handle migrations safely?"
+
+    list_resp = client.get(
+        f"/api/job-profiles/{profile['id']}/questions",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert list_resp.status_code == 200
+    all_questions = list_resp.json()["questions"]
+    assert len(all_questions) == 3
+
+    approved_in_list = [q for q in all_questions if q["id"] == approved_id]
+    assert len(approved_in_list) == 1
+    assert approved_in_list[0]["approved_by_student"] is True
+
+    with session_factory() as db:
+        stored = db.scalars(
+            select(JobQuestion).where(JobQuestion.job_profile_id == profile["id"])
+        ).all()
+        assert len(stored) == 3
+        persisted_approved = [q for q in stored if q.id == approved_id]
+        assert persisted_approved[0].approved_by_student is True
+
+
+def test_generation_failure_does_not_delete_or_alter_existing_questions(
+    job_question_context: tuple[
+        TestClient,
+        Callable[[str], tuple[int, str]],
+        sessionmaker[Session],
+    ],
+) -> None:
+    client, create_user, session_factory = job_question_context
+    _, token = create_user("generation-fail-preserve@example.com")
+    profile = create_profile(client, token)
+
+    initial_questions = [
+        GeneratedQuestion(
+            question="Explain asynchronous programming in Python.",
+            question_type="CONCEPTUAL",
+            difficulty="MEDIUM",
+            skill_tags=["Async", "Python"],
+        ),
+    ]
+    install_generator(client, FakeQuestionGenerator(result=initial_questions))
+    first_resp = client.post(
+        f"/api/job-profiles/{profile['id']}/questions/generate",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert first_resp.status_code == 201
+    initial_id = first_resp.json()["questions"][0]["id"]
+
+    client.patch(
+        f"/api/job-profiles/{profile['id']}/questions/{initial_id}",
+        json={"approved_by_student": True},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    install_generator(
+        client,
+        FakeQuestionGenerator(error=QuestionGeneratorError("Upstream provider failure")),
+    )
+    fail_resp = client.post(
+        f"/api/job-profiles/{profile['id']}/questions/generate",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert fail_resp.status_code == 502
+    assert fail_resp.json()["detail"] == "AI question generation failed"
+
+    list_resp = client.get(
+        f"/api/job-profiles/{profile['id']}/questions",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert list_resp.status_code == 200
+    questions = list_resp.json()["questions"]
+    assert len(questions) == 1
+    assert questions[0]["id"] == initial_id
+    assert questions[0]["approved_by_student"] is True
+
+    with session_factory() as db:
+        stored = db.scalars(
+            select(JobQuestion).where(JobQuestion.job_profile_id == profile["id"])
+        ).all()
+        assert len(stored) == 1
+        assert stored[0].id == initial_id
+        assert stored[0].approved_by_student is True
+
+
 def test_generation_rejects_more_than_ten_questions(
     job_question_context: tuple[
         TestClient,
