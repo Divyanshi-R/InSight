@@ -2243,6 +2243,308 @@
   border-radius: 6px;
 }
 
+/* ==========================================================================
+   M8 - Integrated Virtual Interview Room
+   ========================================================================== */
+
+.interview-shell .header-inner,
+.interview-shell .interview-main {
+  width: min(1200px, calc(100% - 48px));
+  max-width: 1200px;
+}
+
+.progress-room-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.virtual-room-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  background: #f0ecfa;
+  color: #48389c;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  border: 1px solid #dfd8f4;
+}
+
+.room-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #9b94b0;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.room-dot--live {
+  background: #12b886;
+  box-shadow: 0 0 0 3px rgba(18, 184, 134, 0.25);
+}
+
+.virtual-room-grid {
+  display: grid;
+  grid-template-columns: minmax(340px, 420px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.virtual-room-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.virtual-room-workspace {
+  min-width: 0;
+}
+
+/* Camera Preview Tile */
+.camera-preview-tile {
+  background: #ffffff;
+  border: 1px solid #e3def2;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 3px 12px rgba(45, 30, 99, 0.04);
+}
+
+.camera-tile-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: #fbfaff;
+  border-bottom: 1px solid #ece7f7;
+}
+
+.camera-status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #3b3552;
+}
+
+.camera-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #9e97af;
+  transition: background 0.2s ease;
+}
+
+.camera-status-dot--live {
+  background: #12b886;
+  box-shadow: 0 0 0 3px rgba(18, 184, 134, 0.25);
+  animation: cameraPulse 2s infinite;
+}
+
+@keyframes cameraPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(18, 184, 134, 0.6);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(18, 184, 134, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(18, 184, 134, 0);
+  }
+}
+
+.camera-toggle-btn {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+}
+
+.camera-viewport {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #161420;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.camera-video-feed {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1); /* Mirror camera for natural reflection */
+}
+
+.camera-video-feed--active {
+  display: block;
+}
+
+.camera-video-feed--hidden {
+  display: none;
+}
+
+.camera-off-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 20px 18px;
+  color: #bfb9d4;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.camera-off-icon {
+  font-size: 28px;
+  margin-bottom: 6px;
+  filter: grayscale(40%);
+}
+
+.camera-off-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #eeeaf8;
+}
+
+.camera-off-text {
+  margin: 0 0 12px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #9f97b6;
+  max-width: 250px;
+}
+
+.enable-cam-action {
+  font-size: 11px;
+  padding: 4px 12px;
+}
+
+.camera-live-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  background: rgba(18, 184, 134, 0.9);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  border-radius: 999px;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.live-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+.camera-error-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #fff5f5;
+  border-top: 1px solid #ffd8d8;
+  color: #c92a2a;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.camera-error-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.camera-error-icon {
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.camera-error-text {
+  color: #b02525;
+}
+
+.camera-error-dismiss {
+  background: transparent;
+  border: none;
+  color: #c92a2a;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.camera-error-dismiss:hover {
+  color: #8b1818;
+}
+
+/* Virtual Practice Guidance Card */
+.room-guidance-card {
+  padding: 14px 16px;
+  background: #ffffff;
+  border: 1px solid #ebe6f7;
+  border-radius: 12px;
+  font-size: 12px;
+  color: #554f6e;
+  box-shadow: 0 2px 8px rgba(45, 30, 99, 0.02);
+}
+
+.guidance-title {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #27223b;
+  margin-bottom: 8px;
+  letter-spacing: 0.02em;
+}
+
+.guidance-list {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.5;
+}
+
+.guidance-list li {
+  margin-bottom: 4px;
+}
+
+.guidance-list li:last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 980px) {
+  .virtual-room-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .virtual-room-stage {
+    order: 1;
+  }
+
+  .virtual-room-workspace {
+    order: 2;
+  }
+}
+
 @media (max-width: 640px) {
   .questions-section-header {
     flex-direction: column;
@@ -2266,5 +2568,11 @@
   .nav-actions-right {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .progress-room-status {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
   }
 }

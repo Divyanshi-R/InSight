@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
+import { useCameraPreview } from '../hooks/useCameraPreview'
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder'
 import {
   completeInterview,
@@ -37,6 +38,16 @@ export default function InterviewPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [isFinishing, setIsFinishing] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
+
+  const {
+    videoRef,
+    isCameraOn,
+    isLoading: isCameraLoading,
+    cameraError,
+    stopCamera,
+    toggleCamera,
+    clearCameraError,
+  } = useCameraPreview()
 
   const {
     isRecording,
@@ -204,6 +215,9 @@ export default function InterviewPage() {
 
     if (isRecording) {
       stopRecording()
+    }
+    if (isCameraOn) {
+      stopCamera()
     }
 
     setIsFinishing(true)
@@ -402,12 +416,21 @@ export default function InterviewPage() {
             </section>
           </section>
         ) : (
-          <div className="interview-active-view">
+          <div className="interview-active-view virtual-interview-room">
             <div className="interview-progress-bar-wrap">
               <div className="progress-info">
-                <span className="progress-step">
-                  Question <strong>{currentIndex + 1}</strong> of <strong>{totalQuestions}</strong>
-                </span>
+                <div className="progress-room-status">
+                  <span className="virtual-room-indicator">
+                    <span
+                      className={`room-dot ${isCameraOn ? 'room-dot--live' : ''}`}
+                      aria-hidden="true"
+                    />
+                    Virtual Interview Room
+                  </span>
+                  <span className="progress-step">
+                    Question <strong>{currentIndex + 1}</strong> of <strong>{totalQuestions}</strong>
+                  </span>
+                </div>
                 <span className="progress-count">
                   {answeredCount} of {totalQuestions} answered
                 </span>
@@ -427,253 +450,353 @@ export default function InterviewPage() {
             </div>
 
             {currentQuestion ? (
-              <article className="interview-question-card">
-                <div className="question-card-meta">
-                  <div className="question-badges">
-                    <span className="question-pill question-pill--type">
-                      {currentQuestion.question_type}
-                    </span>
-                    <span className="question-pill question-pill--difficulty">
-                      {currentQuestion.difficulty}
-                    </span>
-                  </div>
-                  {saveMessage && (
-                    <span className="save-status-indicator" aria-live="polite">
-                      {saveMessage}
-                    </span>
-                  )}
-                </div>
-
-                <h2 className="interview-prompt-text">{currentQuestion.question}</h2>
-
-                {currentQuestion.skill_tags?.length > 0 && (
-                  <div className="question-tags">
-                    {currentQuestion.skill_tags.map((tag) => (
-                      <span className="skill-tag" key={tag}>
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {/* M7 Voice Recording & Speech-to-Text Interface */}
-                <div className="voice-recorder-section" aria-label="Voice response recorder">
-                  <div className="voice-recorder-header">
-                    <div className="voice-title-wrap">
-                      <span className="mic-icon" aria-hidden="true">🎙</span>
-                      <span className="voice-section-title">Voice Answer & Live Transcription</span>
-                    </div>
-                    {!isSpeechRecognitionSupported && (
-                      <span className="browser-support-tag" title="Web Speech API not available in this browser">
-                        Manual transcription
-                      </span>
-                    )}
-                  </div>
-
-                  {recorderError && (
-                    <div className="dashboard-error voice-error-alert" role="alert">
-                      <span>{recorderError}</span>
-                    </div>
-                  )}
-
-                  {!isSpeechRecognitionSupported && (
-                    <div className="voice-browser-notice">
-                      <span>
-                        ℹ️ <strong>Browser note:</strong> Real-time speech-to-text uses the Web Speech API (supported in Chrome, Edge, and Chromium browsers). You can still record audio for review and type or edit your answer in the editor below.
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="voice-controls-bar">
-                    {!isRecording ? (
-                      <div className="voice-idle-controls">
-                        <button
-                          type="button"
-                          className="button button-primary record-button"
-                          disabled={isSaving}
-                          onClick={handleToggleRecording}
-                        >
-                          <span className="record-dot-icon" aria-hidden="true" />
-                          {audioUrl ? 'Record Again' : 'Record Answer'}
-                        </button>
-                        <span className="voice-hint">
-                          {audioUrl
-                            ? 'You can re-record your answer or edit your response text below.'
-                            : 'Click to speak your answer. Your speech will be transcribed in real time.'}
+              <div className="virtual-room-grid">
+                {/* Left Stage: Camera Preview & Audio AV Controls */}
+                <aside className="virtual-room-stage" aria-label="Camera preview and audio recording">
+                  <div className="camera-preview-tile">
+                    <div className="camera-tile-header">
+                      <div className="camera-status-indicator">
+                        <span
+                          className={`camera-status-dot ${isCameraOn ? 'camera-status-dot--live' : ''}`}
+                          aria-hidden="true"
+                        />
+                        <span className="camera-status-label">
+                          {isCameraOn ? 'Live Camera' : 'Camera Off'}
                         </span>
                       </div>
-                    ) : (
-                      <div className="voice-active-controls">
-                        <div className="recording-status-pill">
-                          <span className="recording-pulse-dot" aria-hidden="true" />
-                          <span>Recording...</span>
-                          <span className="recording-timer">{formatDuration(recordingDuration)}</span>
+                      <button
+                        type="button"
+                        className={`button button-sm ${isCameraOn ? 'button-danger' : 'button-secondary'} camera-toggle-btn`}
+                        onClick={toggleCamera}
+                        disabled={isCameraLoading}
+                      >
+                        {isCameraLoading ? (
+                          'Connecting...'
+                        ) : isCameraOn ? (
+                          'Turn Camera Off'
+                        ) : (
+                          'Turn Camera On'
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="camera-viewport">
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className={`camera-video-feed ${isCameraOn ? 'camera-video-feed--active' : 'camera-video-feed--hidden'}`}
+                        aria-label="Live webcam preview"
+                      />
+
+                      {!isCameraOn && (
+                        <div className="camera-off-placeholder">
+                          <div className="camera-off-icon" aria-hidden="true">
+                            📷
+                          </div>
+                          <p className="camera-off-title">Camera preview is off</p>
+                          <p className="camera-off-text">
+                            Enable your camera to preview your video while answering, or continue with microphone or typing.
+                          </p>
+                          <button
+                            type="button"
+                            className="button button-sm button-primary enable-cam-action"
+                            onClick={toggleCamera}
+                            disabled={isCameraLoading}
+                          >
+                            {isCameraLoading ? 'Starting...' : 'Enable Camera'}
+                          </button>
+                        </div>
+                      )}
+
+                      {isCameraOn && (
+                        <div className="camera-live-badge" aria-label="Live video preview">
+                          <span className="live-pulse-dot" aria-hidden="true" />
+                          LIVE PREVIEW
+                        </div>
+                      )}
+                    </div>
+
+                    {cameraError && (
+                      <div className="camera-error-banner" role="alert">
+                        <div className="camera-error-content">
+                          <span className="camera-error-icon" aria-hidden="true">⚠️</span>
+                          <span className="camera-error-text">{cameraError}</span>
                         </div>
                         <button
                           type="button"
-                          className="button button-danger stop-record-button"
-                          onClick={handleToggleRecording}
+                          className="camera-error-dismiss"
+                          onClick={clearCameraError}
+                          aria-label="Dismiss error notice"
                         >
-                          ⏹ Stop Recording
+                          ✕
                         </button>
                       </div>
                     )}
+                  </div>
 
-                    {audioUrl && !isRecording && (
-                      <div className="voice-playback-wrap">
-                        <span className="playback-label">Review audio:</span>
-                        <audio
-                          controls
-                          src={audioUrl}
-                          className="voice-audio-player"
-                          aria-label="Recorded answer playback"
-                        />
+                  {/* Voice Recording & Transcription */}
+                  <div className="voice-recorder-section" aria-label="Voice response recorder">
+                    <div className="voice-recorder-header">
+                      <div className="voice-title-wrap">
+                        <span className="mic-icon" aria-hidden="true">🎙</span>
+                        <span className="voice-section-title">Microphone & Transcription</span>
+                      </div>
+                      {!isSpeechRecognitionSupported && (
+                        <span className="browser-support-tag" title="Web Speech API not available in this browser">
+                          Manual transcription
+                        </span>
+                      )}
+                    </div>
+
+                    {recorderError && (
+                      <div className="dashboard-error voice-error-alert" role="alert">
+                        <span>{recorderError}</span>
+                      </div>
+                    )}
+
+                    {!isSpeechRecognitionSupported && (
+                      <div className="voice-browser-notice">
+                        <span>
+                          ℹ️ <strong>Browser note:</strong> Real-time speech-to-text uses the Web Speech API (supported in Chrome and Edge). You can still record audio for review and type or edit your answer in the editor.
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="voice-controls-bar">
+                      {!isRecording ? (
+                        <div className="voice-idle-controls">
+                          <button
+                            type="button"
+                            className="button button-primary record-button"
+                            disabled={isSaving}
+                            onClick={handleToggleRecording}
+                          >
+                            <span className="record-dot-icon" aria-hidden="true" />
+                            {audioUrl ? 'Record Again' : 'Record Answer'}
+                          </button>
+                          <span className="voice-hint">
+                            {audioUrl
+                              ? 'Re-record response or edit text in the response box.'
+                              : 'Click to speak. Audio transcribes live.'}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="voice-active-controls">
+                          <div className="recording-status-pill">
+                            <span className="recording-pulse-dot" aria-hidden="true" />
+                            <span>Recording...</span>
+                            <span className="recording-timer">{formatDuration(recordingDuration)}</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="button button-danger stop-record-button"
+                            onClick={handleToggleRecording}
+                          >
+                            ⏹ Stop Recording
+                          </button>
+                        </div>
+                      )}
+
+                      {audioUrl && !isRecording && (
+                        <div className="voice-playback-wrap">
+                          <span className="playback-label">Review audio:</span>
+                          <audio
+                            controls
+                            src={audioUrl}
+                            className="voice-audio-player"
+                            aria-label="Recorded answer playback"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {isRecording && interimTranscript && (
+                      <div className="voice-interim-box" aria-live="polite">
+                        <span className="interim-label">Listening:</span>
+                        <p className="interim-text">"{interimTranscript}"</p>
                       </div>
                     )}
                   </div>
 
-                  {isRecording && interimTranscript && (
-                    <div className="voice-interim-box" aria-live="polite">
-                      <span className="interim-label">Listening:</span>
-                      <p className="interim-text">"{interimTranscript}"</p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="interview-input-area">
-                  <div className="input-area-header">
-                    <label htmlFor="answer-input">
-                      Your response
-                      {currentDuration != null && (
-                        <span className="recorded-pill">
-                          Recorded ({Math.round(currentDuration)}s)
-                        </span>
-                      )}
-                    </label>
-                    <span className="char-count">{currentAnswer.length} characters</span>
+                  <div className="room-guidance-card">
+                    <span className="guidance-title">🎯 Virtual Practice Tips</span>
+                    <ul className="guidance-list">
+                      <li>Maintain eye contact by looking near your camera lens.</li>
+                      <li>Camera & microphone work independently — practice with or without video.</li>
+                      <li>Take a breath before answering and structure responses clearly.</li>
+                    </ul>
                   </div>
-                  <textarea
-                    id="answer-input"
-                    rows={8}
-                    maxLength={20000}
-                    value={currentAnswer}
-                    onChange={(e) => setCurrentAnswer(e.target.value)}
-                    placeholder="Type or speak your answer here... You can freely edit or expand your answer before saving."
-                  />
-                </div>
+                </aside>
 
-                {/* M7 Speech Delivery Summary */}
-                {clientMetrics.word_count > 0 && (
-                  <div className="speech-metrics-card" aria-label="Speech delivery analysis">
-                    <div className="speech-metrics-header">
-                      <span className="speech-metrics-title">📊 Speech Delivery Summary</span>
-                      {effectiveDuration != null ? (
-                        <span className="delivery-mode-tag">🎙 Recorded ({formatDuration(effectiveDuration)})</span>
-                      ) : (
-                        <span className="delivery-mode-tag">✍ Written</span>
+                {/* Right Workspace: Question Prompt, Text Response, Delivery Metrics, Navigation */}
+                <section className="virtual-room-workspace" aria-label="Question prompt and response workspace">
+                  <article className="interview-question-card">
+                    <div className="question-card-meta">
+                      <div className="question-badges">
+                        <span className="question-pill question-pill--type">
+                          {currentQuestion.question_type}
+                        </span>
+                        <span className="question-pill question-pill--difficulty">
+                          {currentQuestion.difficulty}
+                        </span>
+                      </div>
+                      {saveMessage && (
+                        <span className="save-status-indicator" aria-live="polite">
+                          {saveMessage}
+                        </span>
                       )}
                     </div>
 
-                    <div className="speech-metrics-grid">
-                      <div className="speech-metric-item">
-                        <span className="metric-name">Duration</span>
-                        <span className="metric-number">
-                          {effectiveDuration != null ? `${Math.round(effectiveDuration)}s` : 'Written'}
-                        </span>
-                      </div>
+                    <h2 className="interview-prompt-text">{currentQuestion.question}</h2>
 
-                      <div className="speech-metric-item">
-                        <span className="metric-name">Word Count</span>
-                        <span className="metric-number">{clientMetrics.word_count}</span>
+                    {currentQuestion.skill_tags?.length > 0 && (
+                      <div className="question-tags">
+                        {currentQuestion.skill_tags.map((tag) => (
+                          <span className="skill-tag" key={tag}>
+                            {tag}
+                          </span>
+                        ))}
                       </div>
+                    )}
 
-                      <div className="speech-metric-item">
-                        <span className="metric-name">Pacing</span>
-                        <span className="metric-number">
-                          {clientMetrics.words_per_minute != null
-                            ? `${clientMetrics.words_per_minute} WPM`
-                            : '—'}
-                        </span>
-                        <span className="metric-subtext">
-                          {clientMetrics.words_per_minute != null
-                            ? clientMetrics.words_per_minute < 110
-                              ? 'Deliberate pace'
-                              : clientMetrics.words_per_minute <= 165
-                              ? 'Conversational pace'
-                              : 'Brisk pace'
-                            : 'Available with audio'}
-                        </span>
+                    <div className="interview-input-area">
+                      <div className="input-area-header">
+                        <label htmlFor="answer-input">
+                          Your Response & Transcript
+                          {currentDuration != null && (
+                            <span className="recorded-pill">
+                              Recorded ({Math.round(currentDuration)}s)
+                            </span>
+                          )}
+                        </label>
+                        <span className="char-count">{currentAnswer.length} characters</span>
                       </div>
+                      <textarea
+                        id="answer-input"
+                        rows={8}
+                        maxLength={20000}
+                        value={currentAnswer}
+                        onChange={(e) => setCurrentAnswer(e.target.value)}
+                        placeholder="Type or speak your answer here... You can freely edit or expand your answer before saving."
+                      />
+                    </div>
 
-                      <div className="speech-metric-item">
-                        <span className="metric-name">Filler Words</span>
-                        <span className="metric-number">{clientMetrics.filler_words_count}</span>
-                        {clientMetrics.filler_words_count > 0 && (
-                          <div className="filler-tags-list">
-                            {Object.entries(clientMetrics.filler_words).map(([word, count]) => (
-                              <span className="filler-word-pill" key={word}>
-                                "{word}" ({count})
-                              </span>
-                            ))}
+                    {/* M7 Speech Delivery Summary */}
+                    {clientMetrics.word_count > 0 && (
+                      <div className="speech-metrics-card" aria-label="Speech delivery analysis">
+                        <div className="speech-metrics-header">
+                          <span className="speech-metrics-title">📊 Speech Delivery Summary</span>
+                          {effectiveDuration != null ? (
+                            <span className="delivery-mode-tag">🎙 Recorded ({formatDuration(effectiveDuration)})</span>
+                          ) : (
+                            <span className="delivery-mode-tag">✍ Written</span>
+                          )}
+                        </div>
+
+                        <div className="speech-metrics-grid">
+                          <div className="speech-metric-item">
+                            <span className="metric-name">Duration</span>
+                            <span className="metric-number">
+                              {effectiveDuration != null ? `${Math.round(effectiveDuration)}s` : 'Written'}
+                            </span>
                           </div>
+
+                          <div className="speech-metric-item">
+                            <span className="metric-name">Word Count</span>
+                            <span className="metric-number">{clientMetrics.word_count}</span>
+                          </div>
+
+                          <div className="speech-metric-item">
+                            <span className="metric-name">Pacing</span>
+                            <span className="metric-number">
+                              {clientMetrics.words_per_minute != null
+                                ? `${clientMetrics.words_per_minute} WPM`
+                                : '—'}
+                            </span>
+                            <span className="metric-subtext">
+                              {clientMetrics.words_per_minute != null
+                                ? clientMetrics.words_per_minute < 110
+                                  ? 'Deliberate pace'
+                                  : clientMetrics.words_per_minute <= 165
+                                  ? 'Conversational pace'
+                                  : 'Brisk pace'
+                                : 'Available with audio'}
+                            </span>
+                          </div>
+
+                          <div className="speech-metric-item">
+                            <span className="metric-name">Filler Words</span>
+                            <span className="metric-number">{clientMetrics.filler_words_count}</span>
+                            {clientMetrics.filler_words_count > 0 && (
+                              <div className="filler-tags-list">
+                                {Object.entries(clientMetrics.filler_words).map(([word, count]) => (
+                                  <span className="filler-word-pill" key={word}>
+                                    "{word}" ({count})
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="speech-metrics-footer">
+                          <span className="pause-notice">
+                            ⏸ <em>{clientMetrics.pause_analysis}</em>
+                          </span>
+                          <p className="speech-disclaimer">
+                            * Pacing and filler word metrics are provided for delivery awareness only and do not evaluate candidate competence, knowledge, or confidence.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="interview-nav-actions">
+                      <div className="nav-actions-left">
+                        <button
+                          type="button"
+                          className="button button-quiet"
+                          disabled={currentIndex === 0 || isSaving}
+                          onClick={() => handleNavigate(currentIndex - 1)}
+                        >
+                          ← Previous
+                        </button>
+                        <button
+                          type="button"
+                          className="button button-secondary save-draft-button"
+                          disabled={isSaving}
+                          onClick={handleManualSave}
+                        >
+                          {isSaving ? 'Saving...' : 'Save Draft'}
+                        </button>
+                      </div>
+
+                      <div className="nav-actions-right">
+                        {currentIndex < totalQuestions - 1 ? (
+                          <button
+                            type="button"
+                            className="button button-primary"
+                            disabled={isSaving}
+                            onClick={() => handleNavigate(currentIndex + 1)}
+                          >
+                            Next question →
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="button button-primary finish-interview-button"
+                            disabled={isFinishing || isSaving}
+                            onClick={handleFinish}
+                          >
+                            {isFinishing ? 'Finalizing...' : 'Finish Interview'} ✓
+                          </button>
                         )}
                       </div>
                     </div>
-
-                    <div className="speech-metrics-footer">
-                      <span className="pause-notice">
-                        ⏸ <em>{clientMetrics.pause_analysis}</em>
-                      </span>
-                      <p className="speech-disclaimer">
-                        * Pacing and filler word metrics are provided for delivery awareness only and do not evaluate candidate competence, knowledge, or confidence.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="interview-nav-actions">
-                  <div className="nav-actions-left">
-                    <button
-                      type="button"
-                      className="button button-quiet"
-                      disabled={currentIndex === 0 || isSaving}
-                      onClick={() => handleNavigate(currentIndex - 1)}
-                    >
-                      ← Previous
-                    </button>
-                    <button
-                      type="button"
-                      className="button button-secondary save-draft-button"
-                      disabled={isSaving}
-                      onClick={handleManualSave}
-                    >
-                      {isSaving ? 'Saving...' : 'Save Draft'}
-                    </button>
-                  </div>
-
-                  <div className="nav-actions-right">
-                    {currentIndex < totalQuestions - 1 ? (
-                      <button
-                        type="button"
-                        className="button button-primary"
-                        disabled={isSaving}
-                        onClick={() => handleNavigate(currentIndex + 1)}
-                      >
-                        Next question →
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="button button-primary finish-interview-button"
-                        disabled={isFinishing || isSaving}
-                        onClick={handleFinish}
-                      >
-                        {isFinishing ? 'Finalizing...' : 'Finish Interview'} ✓
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </article>
+                  </article>
+                </section>
+              </div>
             ) : (
               <div className="sessions-panel dashboard-loading">No questions found in this session.</div>
             )}
