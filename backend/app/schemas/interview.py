@@ -1,5 +1,8 @@
 from datetime import datetime
+from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.evaluation import EvaluationResponse
 
 
 class InterviewStartRequest(BaseModel):
@@ -38,6 +41,7 @@ class InterviewQuestionItem(BaseModel):
     answered: bool = False
     duration_seconds: float | None = None
     speech_metrics: SpeechMetrics | None = None
+    evaluation: EvaluationResponse | None = None
 
 
 class InterviewSessionResponse(BaseModel):
@@ -52,6 +56,7 @@ class InterviewSessionResponse(BaseModel):
     completed_at: datetime | None
     total_questions: int
     answered_count: int
+    score: Decimal | None = None
     questions: list[InterviewQuestionItem]
 
 
@@ -76,3 +81,5 @@ class InterviewListItemResponse(BaseModel):
     completed_at: datetime | None
     total_questions: int
     answered_count: int
+    score: Decimal | None = None
+

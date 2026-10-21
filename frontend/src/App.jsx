@@ -2,9 +2,12 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './auth/useAuth'
 import DashboardPage from './pages/DashboardPage'
 import InterviewPage from './pages/InterviewPage'
+import InterviewSetupPage from './pages/InterviewSetupPage'
 import JobProfilesPage from './pages/JobProfilesPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
+import ReportsHistoryPage from './pages/ReportsHistoryPage'
+import SessionReportPage from './pages/SessionReportPage'
 import './App.css'
 
 function ProtectedRoute({ children }) {
@@ -78,10 +81,42 @@ function App() {
         }
       />
       <Route
+        path="/interview/new"
+        element={
+          <ProtectedRoute>
+            <InterviewSetupPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/interview/setup"
+        element={
+          <ProtectedRoute>
+            <InterviewSetupPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/interview/:sessionId"
         element={
           <ProtectedRoute>
             <InterviewPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/interview/:sessionId/report"
+        element={
+          <ProtectedRoute>
+            <SessionReportPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/reports"
+        element={
+          <ProtectedRoute>
+            <ReportsHistoryPage />
           </ProtectedRoute>
         }
       />

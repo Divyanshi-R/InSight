@@ -201,11 +201,17 @@ credentials to the frontend.
 
 M6 provides the authenticated question-by-question interview practice experience:
 - `POST /api/interviews` — create/start an interview session from a selected job profile's approved questions.
-- `GET /api/interviews` — list the authenticated user's practice sessions.
-- `GET /api/interviews/{session_id}` — retrieve session details, question list, and recorded answers.
-- `PUT /api/interviews/{session_id}/answers/{question_id}` — record and persist plain-text answers.
+- `GET /api/interviews` — list the authenticated user's practice sessions (complete list without truncation).
+- `GET /api/interviews/{session_id}` — retrieve session details, question list, recorded answers, and speech metrics.
+- `PUT /api/interviews/{session_id}/answers/{question_id}` — record and persist plain-text answers, duration, and compute speech metrics (WPM, filler words).
 - `POST /api/interviews/{session_id}/complete` — finalize the interview session.
-- Frontend `/interview/:sessionId` — question-by-question navigation, answer persistence, progress tracking, resume support, and completion review.
+
+### M7 - AI Answer Evaluation & Reports
+
+M7 provides structured multi-category evaluation of recorded candidate answers:
+- `POST /api/interviews/{session_id}/evaluate` — triggers structured AI evaluation across relevance, accuracy, depth, clarity, and structure.
+- `GET /api/interviews/{session_id}/evaluation` — retrieves the saved session evaluation and answer breakdowns.
+- `POST /api/interviews/{session_id}/answers/{question_id}/evaluate` — evaluate a single interview answer.
 
 ### M1 - Project Foundation
 

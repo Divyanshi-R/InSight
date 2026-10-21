@@ -177,3 +177,30 @@ export async function completeInterview(token, sessionId, { signal } = {}) {
 export async function getUserInterviews(token, { signal } = {}) {
   return request('/api/interviews', { token, signal })
 }
+
+export async function evaluateInterviewSession(token, sessionId, { signal } = {}) {
+  return request(`/api/interviews/${encodeURIComponent(sessionId)}/evaluate`, {
+    method: 'POST',
+    token,
+    signal,
+  })
+}
+
+export async function getInterviewEvaluation(token, sessionId, { signal } = {}) {
+  return request(`/api/interviews/${encodeURIComponent(sessionId)}/evaluation`, {
+    token,
+    signal,
+  })
+}
+
+export async function evaluateInterviewAnswer(token, sessionId, questionId, { signal } = {}) {
+  return request(
+    `/api/interviews/${encodeURIComponent(sessionId)}/answers/${encodeURIComponent(questionId)}/evaluate`,
+    {
+      method: 'POST',
+      token,
+      signal,
+    }
+  )
+}
+

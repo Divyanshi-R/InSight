@@ -620,6 +620,8 @@ def test_speech_analysis_metrics_computation() -> None:
     assert "um" in result["filler_words"]
     assert "you know" in result["filler_words"]
     assert result["pause_analysis"] == "Pause analysis is not yet available"
+    assert "eye_contact" not in result
+    assert "gaze_tracking" not in result
 
 
 def test_saving_answer_with_duration_persists_and_returns_speech_metrics(
@@ -743,3 +745,49 @@ def test_get_interview_includes_speech_metrics_for_answered_questions(
     assert answered_q["speech_metrics"] is not None
     assert answered_q["speech_metrics"]["words_per_minute"] == 45.0
     assert answered_q["speech_metrics"]["filler_words_count"] >= 1
+
+
+def test_list_user_interviews_returns_all_unlimited_sessions_and_isolates_users(
+    interview_context: tuple[
+        TestClient, Callable[[str], tuple[int, str]], sessionmaker[Session]
+    ],
+) -> None:
+    client, create_user, session_factory = interview_context
+    # 1. Create User A and User B
+    _, token_a = create_user("history-user-a@example.com")
+    _, token_b = create_user("history-user-b@example.com")
+
+    # 2. Setup job profile with approved question for User A
+    prof_a_id = create_profile_with_questions(client, session_factory, token_a, approved_count=1)
+
+    # 3. Create 12 sessions for User A (exceeding standard 10 page size)
+    session_ids_a = []
+    for _ in range(12):
+        res = client.post(
+            "/api/interviews",
+            json={"job_profile_id": prof_a_id},
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+        assert res.status_code == 201
+        session_ids_a.append(res.json()["id"])
+
+    # 4. Verify User A gets all 12 sessions without truncation
+    resp_a = client.get("/api/interviews", headers={"Authorization": f"Bearer {token_a}"})
+    assert resp_a.status_code == 200
+    interviews_a = resp_a.json()
+    assert len(interviews_a) == 12
+    returned_ids_a = [s["id"] for s in interviews_a]
+    assert set(returned_ids_a) == set(session_ids_a)
+
+    # 5. Verify User B has 0 sessions
+    resp_b = client.get("/api/interviews", headers={"Authorization": f"Bearer {token_b}"})
+    assert resp_b.status_code == 200
+    assert len(resp_b.json()) == 0
+
+    # 6. Verify cross-user isolation: User B cannot access User A's session
+    cross_resp = client.get(
+        f"/api/interviews/{session_ids_a[0]}",
+        headers={"Authorization": f"Bearer {token_b}"},
+    )
+    assert cross_resp.status_code == 404
+

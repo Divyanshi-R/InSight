@@ -18,3 +18,5 @@ class RecentSessionResponse(BaseModel):
     started_at: datetime
     completed_at: datetime | None
     status: str
+    job_title: str | None = None
+    score: Decimal | None = None

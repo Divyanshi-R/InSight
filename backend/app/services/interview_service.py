@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database.models import Answer, InterviewSession, JobProfile, JobQuestion, Question
+from app.schemas.evaluation import EvaluationResponse
 from app.schemas.interview import (
     InterviewAnswerResponse,
     InterviewListItemResponse,
@@ -54,11 +55,21 @@ def build_interview_response(
     )
 
     questions: list[InterviewQuestionItem] = []
+    evaluated_scores: list[Decimal] = []
+
     for ans in answers:
         dur = float(ans.duration_seconds) if ans.duration_seconds is not None else None
         has_answer = bool(ans.transcript and ans.transcript.strip())
         metrics = analyze_speech(ans.transcript, dur) if has_answer else None
         speech_metrics = SpeechMetrics.model_validate(metrics) if metrics is not None else None
+
+        eval_dto = (
+            EvaluationResponse.model_validate(ans.evaluation)
+            if ans.evaluation is not None
+            else None
+        )
+        if ans.evaluation is not None and ans.evaluation.overall_score is not None:
+            evaluated_scores.append(ans.evaluation.overall_score)
 
         if ans.job_question_id is not None:
             jq = ans.job_question or db.get(JobQuestion, ans.job_question_id)
@@ -74,6 +85,7 @@ def build_interview_response(
                         answered=has_answer,
                         duration_seconds=dur,
                         speech_metrics=speech_metrics,
+                        evaluation=eval_dto,
                     )
                 )
         elif ans.question_id is not None:
@@ -90,10 +102,16 @@ def build_interview_response(
                         answered=has_answer,
                         duration_seconds=dur,
                         speech_metrics=speech_metrics,
+                        evaluation=eval_dto,
                     )
                 )
 
     answered_count = sum(1 for item in questions if item.answered)
+    session_score = (
+        round(Decimal(str(sum(evaluated_scores) / len(evaluated_scores))), 2)
+        if evaluated_scores
+        else None
+    )
 
     return InterviewSessionResponse(
         id=session.id,
@@ -105,8 +123,10 @@ def build_interview_response(
         completed_at=session.completed_at,
         total_questions=len(questions),
         answered_count=answered_count,
+        score=session_score,
         questions=questions,
     )
+
 
 
 def start_interview(
@@ -289,6 +309,17 @@ def list_user_interviews(
             1 for ans in answers if ans.transcript and ans.transcript.strip()
         )
 
+        scores = [
+            ans.evaluation.overall_score
+            for ans in answers
+            if ans.evaluation is not None and ans.evaluation.overall_score is not None
+        ]
+        avg_score = (
+            round(Decimal(str(sum(scores) / len(scores))), 2)
+            if scores
+            else None
+        )
+
         results.append(
             InterviewListItemResponse(
                 id=session.id,
@@ -299,6 +330,8 @@ def list_user_interviews(
                 completed_at=session.completed_at,
                 total_questions=total_q,
                 answered_count=answered_q,
+                score=avg_score,
             )
         )
     return results
+
